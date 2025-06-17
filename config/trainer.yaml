@@ -8,8 +8,8 @@ hydra:
     chdir: True
 
 wandb:
-  mode: disabled
-  project: null
+  mode: online
+  project: world_models
   entity: null
   name: null
   group: null
