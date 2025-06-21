@@ -1,5 +1,5 @@
 train:
-  id: BreakoutNoFrameskip-v4
+  id: BankHeistNoFrameskip-v4
   done_on_life_loss: True
   size: 64
   max_episode_steps: null

@@ -65,7 +65,7 @@ class Trainer(StateDictMixin):
         self._is_model_free = cfg.training.model_free
 
         # Checkpointing
-        self._path_ckpt_dir = Path("checkpoints")
+        self._path_ckpt_dir = Path("trained_models")
         self._path_state_ckpt = self._path_ckpt_dir / "state.pt"
         self._keep_agent_copies = partial(
             keep_agent_copies_every,
@@ -96,7 +96,6 @@ class Trainer(StateDictMixin):
         self.train_dataset.load_from_default_path()
         self.test_dataset.load_from_default_path()
 
-        # Envs
         if self._rank == 0:
             train_env = make_atari_env(num_envs=cfg.collection.train.num_envs, device=self._device, **cfg.env.train)
             test_env = make_atari_env(num_envs=cfg.collection.test.num_envs, device=self._device, **cfg.env.test)

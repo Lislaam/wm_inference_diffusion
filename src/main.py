@@ -9,6 +9,7 @@ from torch.distributed import init_process_group, destroy_process_group
 import torch.multiprocessing as mp
 
 from trainer import Trainer
+from train_in_wm import TrainInWM
 from utils import skip_if_run_is_over
 
 
@@ -20,7 +21,9 @@ def main(cfg: DictConfig) -> None:
     setup_visible_cuda_devices(cfg.common.devices)
     world_size = torch.cuda.device_count()
     root_dir = Path(hydra.utils.get_original_cwd())
-    if world_size < 2:
+    if cfg.training.agent_in_wm == True:
+        run_in_wm(cfg, root_dir)
+    elif world_size < 2:
         run(cfg, root_dir)
     else:
         mp.spawn(main_ddp, args=(world_size, cfg, root_dir), nprocs=world_size)
@@ -35,6 +38,11 @@ def main_ddp(rank: int, world_size: int, cfg: DictConfig, root_dir: Path) -> Non
 @skip_if_run_is_over
 def run(cfg: DictConfig, root_dir: Path) -> None:
     trainer = Trainer(cfg, root_dir)
+    trainer.run()
+
+@skip_if_run_is_over
+def run_in_wm(cfg: DictConfig, root_dir: Path) -> None:
+    trainer = TrainInWM(cfg, root_dir)
     trainer.run()
 
 

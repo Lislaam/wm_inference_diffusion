@@ -17,10 +17,10 @@ wandb:
   notes: null
 
 initialization:
-  path_to_ckpt: null
+  path_to_ckpt: /homes/53/fpinto/diamond/trained_models/BankHeist.pt  # if specified, will load the agent from this checkpoint
   load_denoiser: True
   load_rew_end_model: True
-  load_actor_critic: True
+  load_actor_critic: False # Only want to train RL agent for my project
 
 common:
   devices: 0  # int, list of int, cpu, or all 
@@ -58,6 +58,7 @@ training:
   num_workers_data_loaders: 0
   model_free: False # if True, turn off world_model training and RL in imagination
   compile_wm: True
+  agent_in_wm: True  # if True, the agent is trained in the pretrained world model 
 
 evaluation:
   should: True
