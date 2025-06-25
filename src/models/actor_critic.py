@@ -78,8 +78,8 @@ class ActorCritic(nn.Module):
 
         d = Categorical(logits=logits_act)
         entropy = d.entropy().mean()
-        probs = d.probs.detach().cpu()  # shape: [batch_size, num_actions]
-        mean_probs = probs.mean(dim=0)  # shape: [num_actions]
+        probs = d.probs.detach().cpu() 
+        mean_probs = probs.mean(dim=0)  # shape: [horizon, num_actions]
 
         lambda_returns = compute_lambda_returns(rew, end, trunc, val_bootstrap, c.gamma, c.lambda_)
 
@@ -95,7 +95,8 @@ class ActorCritic(nn.Module):
             "loss_entropy": loss_entropy,
             "loss_values": loss_values,
             "loss_total": loss,
-            "mean_action_probs": mean_probs.numpy(),
+            "mean_reward": rew.mean(dim=1),  # Mean reward across the horizon
+            "mean_action_probs": mean_probs.mean(dim=0).numpy() # Mean value for each action across the horizon
         }
 
         return loss, metrics

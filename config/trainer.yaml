@@ -129,8 +129,9 @@ actor_critic:
     start_after_epochs: 0
     steps_first_epoch: 5000
     steps_per_epoch: 400
-    lr_warmup_steps: 100
+    lr_warmup_steps: 10
     max_grad_norm: 100.0
+    num_eval: 50
 
   actor_critic_loss:
     _target_: models.actor_critic.ActorCriticLossConfig

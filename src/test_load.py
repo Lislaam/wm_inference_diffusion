@@ -32,7 +32,6 @@ def main(cfg: DictConfig):
 
     # Verify it worked
     print("After load:")
-    print("Denoiser mean:", next(agent.denoiser.parameters()).data.mean().item())
     print("✅ Denoiser mean:", next(agent.denoiser.parameters()).data.mean().item())
     print("✅ RewEnd mean:", next(agent.rew_end_model.parameters()).data.mean().item())
     print("🟡 ActorCritic mean (random init):", next(agent.actor_critic.parameters()).data.mean().item())
