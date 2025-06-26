@@ -13,6 +13,7 @@ import torch.distributed as dist
 from torch.distributions.categorical import Categorical
 from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
+from datetime import datetime
 import wandb
 
 from agent import Agent
@@ -53,8 +54,9 @@ class TrainInWM(StateDictMixin):
             partial(wandb.init, config=OmegaConf.to_container(cfg, resolve=True), reinit=True, resume=True, **cfg.wandb)
         )
 
+        date_str = datetime.now().strftime("%Y-%m-%d")
         self._path_ckpt_dir = Path("/homes/53/fpinto/diamond/trained_models/")
-        self._path_state_ckpt = self._path_ckpt_dir / "actor_critic_state.pt"
+        self._path_state_ckpt = self._path_ckpt_dir / f"actor_critic_state_{date_str}.pt"
         self._path_ckpt_dir.mkdir(exist_ok=True, parents=True)
 
         # Datasets for initialising world model
@@ -90,7 +92,7 @@ class TrainInWM(StateDictMixin):
 
         # Collect for imagination's initialization
         n = 1000
-        dataset = Dataset(Path(f"dataset/BankHeist_1000"))
+        dataset = Dataset(Path(f"dataset/Boxing_1000"))
         dataset.load_from_default_path()
         if len(dataset) == 0:
             print(f"Collecting {n} steps in real environment for world model initialization.")
@@ -154,11 +156,11 @@ class TrainInWM(StateDictMixin):
 
                 if step % 50 == 0:
                     wandb.log({
-                        f"train/actor_critic/mean_action_probs_hist": wandb.Histogram(metrics["mean_action_probs"]),
+                        f"actor_critic/train/mean_action_probs_hist": wandb.Histogram(metrics["mean_action_probs"]),
                         **{f"train/actor_critic/{k}": v for k, v in metrics.items() if k != "mean_action_probs"}
                     })
                     
-                wandb.log({f"train/actor_critic/{k}": v for k, v in metrics.items() if k != "mean_action_probs"})
+                wandb.log({f"actor_critic/train/{k}": v for k, v in metrics.items() if k != "mean_action_probs"})
                 to_log.append(metrics)
 
         else:
@@ -173,11 +175,11 @@ class TrainInWM(StateDictMixin):
 
             if step % 50 == 0:
                 wandb.log({
-                    f"train/actor_critic/mean_action_probs_hist": wandb.Histogram(metrics["mean_action_probs"]),
-                    **{f"train/actor_critic/{k}": v for k, v in metrics.items() if k != "mean_action_probs"}
+                    f"actor_critic/train/mean_action_probs_hist": wandb.Histogram(metrics["mean_action_probs"]),
+                    **{f"actor_critic/train/{k}": v for k, v in metrics.items() if k != "mean_action_probs"}
                 })
 
-            wandb.log({f"train/actor_critic/{k}": v for k, v in metrics.items() if k != "mean_action_probs"})
+            wandb.log({f"actor_critic/train/{k}": v for k, v in metrics.items() if k != "mean_action_probs"})
             to_log.append(metrics)
 
         return to_log
@@ -195,11 +197,11 @@ class TrainInWM(StateDictMixin):
 
             if step % 50 == 0:
                 wandb.log({
-                    f"val/actor_critic/mean_action_probs_hist": wandb.Histogram(metrics["mean_action_probs"]),
-                    **{f"val/actor_critic/{k}": v for k, v in metrics.items() if k != "mean_action_probs"}
+                    f"actor_critic/val/mean_action_probs_hist": wandb.Histogram(metrics["mean_action_probs"]),
+                    **{f"actor_critic/val/{k}": v for k, v in metrics.items() if k != "mean_action_probs"}
                 })
 
-            wandb.log({f"val/actor_critic/{k}": v for k, v in metrics.items() if k != "mean_action_probs"})
+            wandb.log({f"actor_critic/val/{k}": v for k, v in metrics.items() if k != "mean_action_probs"})
             to_log.append(metrics)
 
         return to_log
@@ -241,9 +243,9 @@ class TrainInWM(StateDictMixin):
 
             # Per-step logging
             wandb.log({
-                "eval/actor_critic/step_reward": rewards.mean().item(),
-                "eval/actor_critic/step_policy_entropy": entropies.mean().item() / math.log(2),
-                "eval/actor_critic/step_action_distribution": wandb.Histogram(probs.mean(dim=0).numpy()),
+                "actor_critic/eval/step_reward": rewards.mean().item(),
+                "actor_critic/eval/step_policy_entropy": entropies.mean().item() / math.log(2),
+                "actor_critic/eval/step_action_distribution": wandb.Histogram(probs.mean(dim=0).numpy()),
             })
 
             step_count += 1
@@ -264,10 +266,10 @@ class TrainInWM(StateDictMixin):
         entropy = Categorical(probs=all_probs).entropy().mean() / math.log(2)
 
         metrics = {
-            "eval/actor_critic/return_mean": mean_return,
-            "eval/actor_critic/return_std": std_return,
-            "eval/actor_critic/policy_entropy": entropy.item(),
-            "eval/actor_critic/mean_action_probs": wandb.Histogram(mean_probs.numpy()),
+            "actor_critic/eval/return_mean": mean_return,
+            "actor_critic/eval/return_std": std_return,
+            "actor_critic/eval/policy_entropy": entropy.item(),
+            "actor_critic/eval/mean_action_probs": wandb.Histogram(mean_probs.numpy()),
         }
 
         wandb.log(metrics)
