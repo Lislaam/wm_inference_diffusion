@@ -315,6 +315,7 @@ class Trainer(StateDictMixin):
             print(f"  Episode {ep_id}: return = {ret} length = {length}\n", end="\n" if i == episodes - 1 else "")
 
         self.num_episodes_test += episodes
+        self.test_dataset.save_to_default_path()
 
         if final:
             to_log.append({"final_return_mean": np.mean(returns), "final_return_std": np.std(returns)})

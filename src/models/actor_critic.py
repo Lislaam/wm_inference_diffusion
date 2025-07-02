@@ -71,6 +71,16 @@ class ActorCritic(nn.Module):
         x = x.flatten(start_dim=1)
         hx, cx = self.lstm(x, hx_cx)
         return ActorCriticOutput(self.actor_linear(hx), self.critic_linear(hx).squeeze(dim=1), (hx, cx))
+    
+    @torch.no_grad()
+    def rollout_entropy(self) -> Tuple[Tensor, Tensor]:
+        self.eval()
+        c = self.loss_cfg
+        _, _, _, _, _, logits_act, _, _, _ = self.env_loop.send(c.backup_every)
+        d = Categorical(logits=logits_act)
+        entropy = d.entropy()  # shape: [batch, horizon]
+        probs = d.probs  # shape: [batch, horizon, num_actions]
+        return entropy, probs
 
     def forward(self) -> LossAndLogs:
         c = self.loss_cfg
@@ -95,7 +105,7 @@ class ActorCritic(nn.Module):
             "loss_entropy": loss_entropy,
             "loss_values": loss_values,
             "loss_total": loss,
-            "mean_reward": rew.mean(dim=1),  # Mean reward across the horizon
+            "mean_reward": rew.mean(dim=1)[0],  # Mean reward on immediate step
             "mean_action_probs": mean_probs.mean(dim=0).numpy() # Mean value for each action across the horizon
         }
 
