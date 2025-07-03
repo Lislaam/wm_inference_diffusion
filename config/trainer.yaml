@@ -23,7 +23,7 @@ initialization:
   load_actor_critic: True # Only want to eval RL agent for my project
 
 common:
-  devices: 1  # int, list of int, cpu, or all 
+  devices: 2  # int, list of int, cpu, or all 
   seed: null
   resume: False # do not modify, set by scripts/resume.sh only.
 

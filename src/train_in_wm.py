@@ -351,36 +351,12 @@ class TrainInWM(StateDictMixin):
         # Create the environments
         env = make_atari_env(num_envs=self._cfg.collection.test.num_envs, device=self._device, **self._cfg.env.test)
 
-        # make_data_loader = partial(
-        #     DataLoader,
-        #     dataset=self.train_dataset,
-        #     collate_fn=collate_segments_to_batch,
-        #     num_workers=cfg.training.num_workers_data_loaders,
-        #     persistent_workers=(cfg.training.num_workers_data_loaders > 0),
-        #     pin_memory=self._use_cuda,
-        #     pin_memory_device=str(self._device) if self._use_cuda else "",
-        # )
-
-        # make_batch_sampler = partial(BatchSampler, self.train_dataset, self._rank, self._world_size)
-
-        # def get_sample_weights(sample_weights: List[float]) -> Optional[List[float]]:
-        #     return None if (self._is_static_dataset and cfg.static_dataset.ignore_sample_weights) else sample_weights
-
-        # cfg = self._cfg
-        # c = cfg.actor_critic.training
-        # sl = cfg.agent.denoiser.inner_model.num_steps_conditioning
-        # bs = make_batch_sampler(c.batch_size, sl, get_sample_weights(c.sample_weights))
-        # dl_actor_critic = make_data_loader(batch_sampler=bs)
-        # wm_env_cfg = instantiate(cfg.world_model_env)
-        # wm_env = WorldModelEnv(self.agent.denoiser, self.agent.rew_end_model, dl_actor_critic, wm_env_cfg)
-
         # Initialize the real environment
         obs = env.reset()[0]
         done = torch.zeros(env.num_envs, dtype=torch.bool, device=self._device)
         num_episodes = self._cfg.actor_critic.training.num_eval
 
-        episode_rewards = torch.zeros(env.num_envs, device=self._device)
-        completed_rewards = []
+        episode_rewards = []
 
         all_probs = []
 
@@ -405,25 +381,24 @@ class TrainInWM(StateDictMixin):
 
                 obs, rewards, terminated, truncated, infos = env.step(actions)
                 done = terminated | truncated
-                episode_rewards += rewards
+                episode_rewards.append(rewards)
 
                 # Per-step logging
                 wandb.log({
                     "actor_critic/eval/step_reward": rewards.item(),
+                    "actor_critic/eval/cumulative_reward": sum(episode_rewards),
                     "actor_critic/eval/policy_entropy": entropies.item() / math.log(2),
                     "actor_critic/eval/mean_action_distribution": wandb.Histogram(probs.mean(dim=0).numpy()), # ACtually probs.mean is the same as probs at dim 0
                 })
 
-                for i, d in enumerate(done):
-                    if d:
-                        completed_rewards.append(episode_rewards[i].item())
-                        episode_rewards[i] = 0.0
-                        hx[i] = 0
-                        cx[i] = 0
+                # for i, d in enumerate(done):
+                #     if d:
+                #         hx[i] = 0
+                #         cx[i] = 0
 
         # Final summary stats
-        mean_return = sum(completed_rewards[:num_episodes]) / num_episodes
-        std_return = torch.tensor(completed_rewards[:num_episodes]).std().item()
+        mean_return = sum(episode_rewards[:num_episodes]) / num_episodes
+        std_return = torch.tensor(episode_rewards[:num_episodes]).std().item()
 
         all_probs = torch.cat(all_probs, dim=0)
         mean_probs = all_probs.mean(dim=0)
@@ -437,7 +412,7 @@ class TrainInWM(StateDictMixin):
         }
 
         wandb.log(metrics)
-        return [metrics]
+        return None
 
 
     def save_checkpoint(self) -> None:
