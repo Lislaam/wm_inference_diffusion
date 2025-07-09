@@ -196,6 +196,47 @@ def init_lstm(model: nn.Module) -> None:
             p.data.fill_(0)
 
 
+def build_buffers_for_planning(
+    obs: torch.Tensor,
+    num_actions: int,
+    horizon: int,
+    obs_history: Optional[List[torch.Tensor]] = None,
+    act_history: Optional[List[int]] = None,
+    device: torch.device = torch.device("cpu")
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Constructs obs_buffer and act_buffer of shape (num_actions, horizon, H, W) and (num_actions, horizon)
+    using the latest obs and optionally some history. Pads with zeros or repeats as needed.
+    """
+    obs = obs.to(device)
+    C, H, W = obs.shape if obs.ndim == 3 else obs[0].shape  # (C, H, W)
+    obs_buffer = torch.zeros(num_actions, horizon, C, H, W, device=device)
+    act_buffer = torch.zeros(num_actions, horizon, dtype=torch.long, device=device)
+
+    # Fill as much of the buffer as possible with history
+    if obs_history is not None and len(obs_history) > 0:
+        n = min(horizon - 1, len(obs_history))
+        for i in range(n):
+            obs_buffer[:, -n - 1 + i] = obs_history[-n + i].to(device)
+    else:
+        # If no history, fill all but last with current obs
+        obs_buffer[:, :-1] = obs.unsqueeze(0).repeat(num_actions, horizon - 1, 1, 1, 1)
+
+    if act_history is not None and len(act_history) > 0:
+        n = min(horizon - 1, len(act_history))
+        for i in range(n):
+            act_buffer[:, -n - 1 + i] = act_history[-n + i]
+    else:
+        act_buffer[:, :-1] = 0  # or a neutral action like "no-op"
+
+    # Overwrite last step with each action
+    for i in range(num_actions):
+        obs_buffer[i, -1] = obs  # current obs
+        act_buffer[i, -1] = i     # candidate action
+
+    return obs_buffer, act_buffer
+
+
 def get_path_agent_ckpt(path_ckpt_dir: Union[str, Path], epoch: int, num_zeros: int = 5) -> Path:
     d = Path(path_ckpt_dir) / "agent_versions"
     if epoch >= 0:
@@ -294,6 +335,8 @@ def set_seed(seed: int) -> None:
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
     random.seed(seed)
+
+    return seed
 
 
 def skip_if_run_is_over(func: Callable) -> Callable:

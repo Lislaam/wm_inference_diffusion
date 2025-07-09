@@ -10,6 +10,7 @@ import torch.multiprocessing as mp
 
 from trainer import Trainer
 from train_in_wm import TrainInWM
+from inference_time_planning import WMInference
 from utils import skip_if_run_is_over
 
 
@@ -42,7 +43,7 @@ def run(cfg: DictConfig, root_dir: Path) -> None:
 
 @skip_if_run_is_over
 def run_in_wm(cfg: DictConfig, root_dir: Path) -> None:
-    trainer = TrainInWM(cfg, root_dir)
+    trainer = WMInference(cfg, root_dir)
     trainer.run()
 
 

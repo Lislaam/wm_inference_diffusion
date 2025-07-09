@@ -18,24 +18,50 @@ def make_atari_env(
     done_on_life_loss: bool,
     size: int,
     max_episode_steps: Optional[int],
+    seed: Optional[int] = None,
 ) -> TorchEnv:
-    def env_fn():
-        env = gymnasium.make(
-            id,
-            full_action_space=False,
-            frameskip=1,
-            render_mode="rgb_array",
-            max_episode_steps=max_episode_steps,
-        )
-        env = AtariPreprocessing(
-            env=env,
-            noop_max=30,
-            frame_skip=4,
-            screen_size=size,
-        )
-        return env
+    def env_fn(rank=0):
+        def _thunk():
+            env = gymnasium.make(
+                id,
+                full_action_space=False,
+                frameskip=1,
+                render_mode="rgb_array",
+                max_episode_steps=max_episode_steps,
+            )
 
-    env = AsyncVectorEnv([env_fn for _ in range(num_envs)])
+            # Set deterministic seed here
+            env.reset(seed=seed + rank if seed is not None else None)
+
+            # Set deterministic Atari preprocessing
+            env = AtariPreprocessing(
+                env=env,
+                noop_max=0,  # << set to 0 to disable random no-ops
+                frame_skip=4,
+                screen_size=size,
+            )
+            return env
+        return _thunk
+    
+    env = AsyncVectorEnv([env_fn(rank) for rank in range(num_envs)])
+    
+    # def env_fn():
+    #     env = gymnasium.make(
+    #         id,
+    #         full_action_space=False,
+    #         frameskip=1,
+    #         render_mode="rgb_array",
+    #         max_episode_steps=max_episode_steps,
+    #     )
+    #     env = AtariPreprocessing(
+    #         env=env,
+    #         noop_max=30,
+    #         frame_skip=4,
+    #         screen_size=size,
+    #     )
+    #     return env
+
+    # env = AsyncVectorEnv([env_fn for _ in range(num_envs)])
 
     # The AsyncVectorEnv resets the env on termination, which means that it will
     # reset the environment if we use the default AtariPreprocessing of gymnasium with

@@ -23,7 +23,7 @@ initialization:
   load_actor_critic: True # Only want to eval RL agent for my project
 
 common:
-  devices: 2  # int, list of int, cpu, or all 
+  devices: 0  # int, list of int, cpu, or all 
   seed: null
   resume: False # do not modify, set by scripts/resume.sh only.
 
@@ -66,7 +66,7 @@ evaluation:
 
 world_model_env:
   _target_: envs.WorldModelEnvConfig
-  horizon: 15
+  horizon: 1 # Number of steps to predict in the future
   num_batches_to_preload: 256
   diffusion_sampler:
     _target_: models.diffusion.DiffusionSamplerConfig
