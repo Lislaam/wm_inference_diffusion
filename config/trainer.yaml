@@ -62,11 +62,12 @@ training:
 
 evaluation:
   should: True
-  every: 1
+  every: 10
+  entropy_threshold: 2
 
 world_model_env:
   _target_: envs.WorldModelEnvConfig
-  horizon: 1 # Number of steps to predict in the future
+  horizon: 15 # Number of steps to predict in the future
   num_batches_to_preload: 256
   diffusion_sampler:
     _target_: models.diffusion.DiffusionSamplerConfig

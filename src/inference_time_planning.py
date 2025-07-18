@@ -19,6 +19,7 @@ from agent import Agent
 from coroutines.collector import make_collector, NumToCollect
 from data import BatchSampler, collate_segments_to_batch, Dataset, DatasetTraverser
 from envs import make_atari_env, WorldModelEnv
+
 from utils import (
     broadcast_if_needed,
     build_ddp_wrapper,
@@ -95,9 +96,7 @@ class WMInference(StateDictMixin):
         use_manager = cfg.training.cache_in_ram and (num_workers > 0)
         p = Path(cfg.static_dataset.path) if self._is_static_dataset else Path("dataset")
         self.train_dataset = Dataset(p / "train", "train_dataset", cfg.training.cache_in_ram, use_manager)
-        # self.test_dataset = Dataset(p / "test", "test_dataset", cache_in_ram=True)
         self.train_dataset.load_from_default_path()
-        # self.test_dataset.load_from_default_path()
 
         # Real environment
         self.env = make_atari_env(num_envs=self._cfg.collection.test.num_envs, seed=self.seed, device=self._device, **self._cfg.env.test)
@@ -142,7 +141,7 @@ class WMInference(StateDictMixin):
             return None if (self._is_static_dataset and cfg.static_dataset.ignore_sample_weights) else sample_weights
 
         c = cfg.denoiser.training
-        seq_length = cfg.agent.denoiser.inner_model.num_steps_conditioning + 1 + c.num_autoregressive_steps
+        seq_length = cfg.agent.denoiser.inner_model.num_steps_conditioning + 1 + c.num_autoregressive_steps # 5 or 6
         bs = make_batch_sampler(c.batch_size, seq_length, get_sample_weights(c.sample_weights))
         dl_denoiser_train = make_data_loader(batch_sampler=bs)
 
@@ -158,23 +157,17 @@ class WMInference(StateDictMixin):
         bs = make_batch_sampler(c.batch_size, sl, get_sample_weights(c.sample_weights))
         dl_actor_critic = make_data_loader(batch_sampler=bs)
         wm_env_cfg = instantiate(cfg.world_model_env)
+
         self.rl_env = WorldModelEnv(self.agent.denoiser, self.agent.rew_end_model, dl_actor_critic, wm_env_cfg)
 
         if cfg.training.compile_wm:
             self.rl_env.predict_next_obs = torch.compile(self.rl_env.predict_next_obs, mode="reduce-overhead")
             self.rl_env.predict_rew_end = torch.compile(self.rl_env.predict_rew_end, mode="reduce-overhead")
 
-        # Setup training
-        sigma_distribution_cfg = instantiate(cfg.denoiser.sigma_distribution)
-        actor_critic_loss_cfg = instantiate(cfg.actor_critic.actor_critic_loss)
-        self.agent.setup_training(sigma_distribution_cfg, actor_critic_loss_cfg, self.rl_env)
-
         # Training state (things to be saved/restored)
         self.epoch = 0
         self.num_epochs_collect = None
         self.num_episodes_test = 0
-        self.num_batch_train = CommonTools(0, 0, 0)
-        self.num_batch_test = CommonTools(0, 0, 0)
 
         if self._rank == 0:
             for name in self._model_names:
@@ -194,10 +187,10 @@ class WMInference(StateDictMixin):
         wandb.define_metric("actor_critic/eval/planning_flag", step_metric="eval_step")
 
         # Evaluation
-        start_time = time.time()
-        self.eval_plain()
-        if self._rank == 0:
-            wandb.log({"duration_plain": (time.time() - start_time) / 3600})
+        # start_time = time.time()
+        # self.eval_plain()
+        # if self._rank == 0:
+        #     wandb.log({"duration_plain": (time.time() - start_time) / 3600})
 
         # Same env with WM planning
         start_time = time.time()
@@ -315,14 +308,12 @@ class WMInference(StateDictMixin):
         """
         self.agent.actor_critic.eval()
 
-        # Create the environments
         env = self.env
         world_model_env = self.rl_env
-        world_model_env.reset()  # initialize buffers
-
-        # Initialize the real environment
         obs = env.reset(seed=self.seed)[0]
         done = torch.zeros(env.num_envs, dtype=torch.bool, device=self._device)
+
+        world_model_env.reset()  # builds internal buffers
         num_episodes = self._cfg.actor_critic.training.num_eval
 
         episode_rewards = []
@@ -332,73 +323,108 @@ class WMInference(StateDictMixin):
         all_obs = []
         all_actions = []
 
-        # Init LSTM hidden state
-        batch_size = env.num_envs
-        hx = torch.zeros(batch_size, self.agent.actor_critic.lstm_dim, device=self._device)
-        cx = torch.zeros(batch_size, self.agent.actor_critic.lstm_dim, device=self._device)
+        hx = torch.zeros(env.num_envs, self.agent.actor_critic.lstm_dim, device=self._device)
+        cx = torch.zeros(env.num_envs, self.agent.actor_critic.lstm_dim, device=self._device)
 
         step = 0
-        planning_flag = 0  # Using this to track the steps where the agent is not confident and uses planning
-
-        for i in trange(num_episodes, desc=f"Evaluating actor-critic with planning"):
+        planning_flag = 0
+        for i in trange(num_episodes, desc="Evaluating actor-critic with planning"):
             if not done:
                 logits, value, (hx, cx) = self.agent.actor_critic.predict_act_value(obs, (hx, cx))
-
                 dist = Categorical(logits=logits)
                 actions = dist.probs.argmax(dim=-1)
                 probs = dist.probs.detach().cpu()
                 entropy = dist.entropy().detach().cpu().item() / math.log(2)
 
-                value_before = value.clone().detach()
+                # all_obs.append(obs.cpu())
 
-                if entropy < 2:
+                use_real_step = (entropy < self._cfg.evaluation.entropy_threshold) or (
+                    i < self._cfg.agent.denoiser.inner_model.num_steps_conditioning
+                )
+
+                if use_real_step:
                     planning_flag = 0
                     obs, rewards, terminated, truncated, infos = env.step(actions)
                     done = terminated | truncated
                     episode_rewards.append(rewards)
-                else:
-                    planning_flag = 100
-                    obs = obs.unsqueeze(0) if obs.ndim == 3 else obs
-                    obs = obs.to(world_model_env.device)
-                    num_actions = 18
 
-                    obs_buffer, act_buffer = build_buffers_for_planning(
-                        obs=obs.squeeze(0),
-                        num_actions=18,
-                        horizon=world_model_env.obs_buffer.shape[1],
-                        obs_history=all_obs,
-                        act_history=all_actions,
-                        device=world_model_env.device,
+                    # Update WM buffers and hiddens
+                    world_model_env.act_buffer[:, -1] = actions
+                    world_model_env.obs_buffer = world_model_env.obs_buffer.roll(-1, dims=1)
+                    world_model_env.act_buffer = world_model_env.act_buffer.roll(-1, dims=1)
+                    world_model_env.obs_buffer[:, -1] = obs
+
+                    _, _, (world_model_env.hx_rew_end, world_model_env.cx_rew_end) = world_model_env.rew_end_model.predict_rew_end(
+                        world_model_env.obs_buffer[:, -1:],
+                        world_model_env.act_buffer[:, -1:],
+                        obs.repeat(world_model_env.obs_buffer.shape[0], 1, 1, 1),
+                        (world_model_env.hx_rew_end, world_model_env.cx_rew_end),
                     )
 
-                    for i in range(num_actions):
-                        act_buffer[i, -1] = i
+                    # all_actions.append(actions.cpu())
+                    entropies.append(entropy)
+                    all_probs.append(probs)
 
-                    with torch.no_grad():
-                        world_model_env.obs_buffer = obs_buffer
-                        world_model_env.act_buffer = act_buffer
-                        next_obs, _ = world_model_env.predict_next_obs()
+                else:
+                    # Now we test out every action inside the world model and select the best one
+                    # Cannot step() with every action as this will update the buffers.
+                    # Copy some of the WM step() code and use it to predict obs and rewards
+                    planning_flag = 100
 
-                        wm_hidden_dim = world_model_env.hx_rew_end.shape[2]
-                        world_model_env.hx_rew_end = torch.zeros(1, num_actions, wm_hidden_dim, device=world_model_env.device)
-                        world_model_env.cx_rew_end = torch.zeros(1, num_actions, wm_hidden_dim, device=world_model_env.device)
+                    best_action = None
+                    best_reward = -10000
+                    # Backup buffers for planning
+                    obs_buffer_base = world_model_env.obs_buffer.clone()
+                    act_buffer_base = world_model_env.act_buffer.clone()
 
-                        imaginary_rew, imaginary_done = world_model_env.predict_rew_end(next_obs.unsqueeze(1))
-                        selected_action = imaginary_rew.argmax().item()
+                    for a in range(env.num_actions):
+                        # Clone clean copy for this candidate action
+                        obs_buffer = obs_buffer_base.roll(-1, dims=1).clone()
+                        act_buffer = act_buffer_base.roll(-1, dims=1).clone()
 
-                    actions = torch.tensor([selected_action] * env.num_envs, device=self._device, dtype=torch.long)
-                    obs, rewards, terminated, truncated, infos = env.step(actions)
+                        obs_buffer[:, -2] = obs  # obs_t (goes to -2)
+                        act_buffer[:, -2] = a    # candidate a_t (goes to -2)
+
+                        # Sample next_obs (imagined obs_{t+1}) and update obs_buffer
+                        next_obs, _ = world_model_env.sampler.sample(obs_buffer, act_buffer)
+                        obs_buffer[:, -1] = next_obs
+
+                        # Use obs_t, a_t, obs_hat_{t+1} for reward prediction
+                        logits_rew, *_ = world_model_env.rew_end_model.predict_rew_end(
+                            obs_buffer[:, -2:-1], act_buffer[:, -2:-1], obs_buffer[:, -1:]
+                        )
+
+                        rew = Categorical(logits=logits_rew).sample().squeeze(1) - 1.0
+                        probs = torch.softmax(logits_rew, dim=-1).cpu()
+                        print(probs)
+
+                        if max(rew).item() > best_reward:
+                            best_reward = max(rew).item()
+                            best_action = torch.tensor([a], device=self._device)
+                            print(f"Best action: {best_action}")
+
+                    obs, rewards, terminated, truncated, infos = env.step(best_action)
                     done = terminated | truncated
+
+                    # Update WM buffers and hiddens with the best action
+                    world_model_env.act_buffer[:, -1] = best_action
+                    world_model_env.obs_buffer = world_model_env.obs_buffer.roll(-1, dims=1)
+                    world_model_env.act_buffer = world_model_env.act_buffer.roll(-1, dims=1)
+                    world_model_env.obs_buffer[:, -1] = obs
+                    
+                    _, _, (world_model_env.hx_rew_end, world_model_env.cx_rew_end) = world_model_env.rew_end_model.predict_rew_end(
+                        world_model_env.obs_buffer[:, -1:],
+                        world_model_env.act_buffer[:, -1:],
+                        obs.repeat(world_model_env.obs_buffer.shape[0], 1, 1, 1),
+                        (world_model_env.hx_rew_end, world_model_env.cx_rew_end),
+                    )
+
+                    # all_actions.append(best_action.cpu())
                     episode_rewards.append(rewards)
 
                 logits_next, value_next, _ = self.agent.actor_critic.predict_act_value(obs, (hx, cx))
-                td_error = (rewards + self._cfg.actor_critic.actor_critic_loss.gamma * value_next - value_before).abs()
+                td_error = (rewards + self._cfg.actor_critic.actor_critic_loss.gamma * value_next - value).abs()
                 episode_td_errors.append(td_error.item())
-
-                entropies.append(entropy)
-                all_probs.append(probs)
-                all_obs.append(obs.cpu())
-                all_actions.append(actions.cpu())
 
                 wandb.log({
                     "eval_step": step,

@@ -199,7 +199,7 @@ def init_lstm(model: nn.Module) -> None:
 def build_buffers_for_planning(
     obs: torch.Tensor,
     num_actions: int,
-    horizon: int,
+    num_conditioning_steps: int,
     obs_history: Optional[List[torch.Tensor]] = None,
     act_history: Optional[List[int]] = None,
     device: torch.device = torch.device("cpu")
@@ -210,20 +210,20 @@ def build_buffers_for_planning(
     """
     obs = obs.to(device)
     C, H, W = obs.shape if obs.ndim == 3 else obs[0].shape  # (C, H, W)
-    obs_buffer = torch.zeros(num_actions, horizon, C, H, W, device=device)
-    act_buffer = torch.zeros(num_actions, horizon, dtype=torch.long, device=device)
+    obs_buffer = torch.zeros(num_actions, num_conditioning_steps, C, H, W, device=device)
+    act_buffer = torch.zeros(num_actions, num_conditioning_steps, dtype=torch.long, device=device)
 
     # Fill as much of the buffer as possible with history
     if obs_history is not None and len(obs_history) > 0:
-        n = min(horizon - 1, len(obs_history))
+        n = min(num_conditioning_steps - 1, len(obs_history))
         for i in range(n):
             obs_buffer[:, -n - 1 + i] = obs_history[-n + i].to(device)
     else:
         # If no history, fill all but last with current obs
-        obs_buffer[:, :-1] = obs.unsqueeze(0).repeat(num_actions, horizon - 1, 1, 1, 1)
+        obs_buffer[:, :-1] = obs.unsqueeze(0).repeat(num_actions, num_conditioning_steps - 1, 1, 1, 1)
 
     if act_history is not None and len(act_history) > 0:
-        n = min(horizon - 1, len(act_history))
+        n = min(num_conditioning_steps - 1, len(act_history))
         for i in range(n):
             act_buffer[:, -n - 1 + i] = act_history[-n + i]
     else:

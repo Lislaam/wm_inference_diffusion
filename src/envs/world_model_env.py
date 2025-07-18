@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Any, Dict, Generator, List, Tuple
+from typing import Any, Dict, Generator, List, Tuple, Optional
 
 import torch
 from torch import Tensor
@@ -102,6 +102,7 @@ class WorldModelEnv:
         )
         rew = Categorical(logits=logits_rew).sample().squeeze(1) - 1.0  # in {-1, 0, 1}
         end = Categorical(logits=logits_end).sample().squeeze(1)
+
         return rew, end
 
     @coroutine
