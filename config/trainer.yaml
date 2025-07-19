@@ -88,7 +88,7 @@ denoiser:
     steps_first_epoch: 10000
     steps_per_epoch: 400
     sample_weights: [0.1, 0.1, 0.1, 0.7]
-    batch_size: 32
+    batch_size: 1
     grad_acc_steps: 1
     lr_warmup_steps: 100
     max_grad_norm: 1.0
@@ -112,7 +112,7 @@ rew_end_model:
     steps_first_epoch: 10000
     steps_per_epoch: 400
     sample_weights: ${denoiser.training.sample_weights}
-    batch_size: 32
+    batch_size: 1
     grad_acc_steps: 1
     lr_warmup_steps: 100
     max_grad_norm: 100.0
@@ -125,7 +125,7 @@ rew_end_model:
 actor_critic:
   training:
     sample_weights: ${denoiser.training.sample_weights}
-    batch_size: 32
+    batch_size: 1
     grad_acc_steps: 1
     start_after_epochs: 0
     steps_first_epoch: 5000

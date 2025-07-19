@@ -12,6 +12,7 @@ import torch
 import torch.distributed as dist
 from torch.utils.data import DataLoader
 from torch.distributions.categorical import Categorical
+from PIL import Image
 from tqdm import tqdm, trange
 import wandb
 
@@ -19,6 +20,7 @@ from agent import Agent
 from coroutines.collector import make_collector, NumToCollect
 from data import BatchSampler, collate_segments_to_batch, Dataset, DatasetTraverser
 from envs import make_atari_env, WorldModelEnv
+from planning_rollout import multistep_planning
 
 from utils import (
     broadcast_if_needed,
@@ -313,24 +315,24 @@ class WMInference(StateDictMixin):
         obs = env.reset(seed=self.seed)[0]
         done = torch.zeros(env.num_envs, dtype=torch.bool, device=self._device)
 
-        world_model_env.reset()  # builds internal buffers
+        world_model_env.reset_no_data()  # builds internal buffers
         num_episodes = self._cfg.actor_critic.training.num_eval
 
         episode_rewards = []
         episode_td_errors = []
         entropies = []
         all_probs = []
-        all_obs = []
-        all_actions = []
+        # all_obs = []
+        # all_actions = []
 
-        hx = torch.zeros(env.num_envs, self.agent.actor_critic.lstm_dim, device=self._device)
-        cx = torch.zeros(env.num_envs, self.agent.actor_critic.lstm_dim, device=self._device)
+        self.hx = torch.zeros(env.num_envs, self.agent.actor_critic.lstm_dim, device=self._device)
+        self.cx = torch.zeros(env.num_envs, self.agent.actor_critic.lstm_dim, device=self._device)
 
         step = 0
         planning_flag = 0
         for i in trange(num_episodes, desc="Evaluating actor-critic with planning"):
             if not done:
-                logits, value, (hx, cx) = self.agent.actor_critic.predict_act_value(obs, (hx, cx))
+                logits, value, (self.hx, self.cx) = self.agent.actor_critic.predict_act_value(obs, (self.hx, self.cx))
                 dist = Categorical(logits=logits)
                 actions = dist.probs.argmax(dim=-1)
                 probs = dist.probs.detach().cpu()
@@ -338,100 +340,155 @@ class WMInference(StateDictMixin):
 
                 # all_obs.append(obs.cpu())
 
-                use_real_step = (entropy < self._cfg.evaluation.entropy_threshold) or (
-                    i < self._cfg.agent.denoiser.inner_model.num_steps_conditioning
-                )
+                use_real_step = (i < self._cfg.agent.denoiser.inner_model.num_steps_conditioning) or (entropy < self._cfg.evaluation.entropy_threshold)
 
-                if use_real_step:
+                # if i < self._cfg.agent.denoiser.inner_model.num_steps_conditioning:
+                #     # During the first steps, we just use the real environment
+                #     # to collect data and build the buffers for planning.
+                #     # This is needed to have enough data in the buffers for the WM to work.
+                #     planning_flag = 0
+                #     obs, rewards, terminated, truncated, infos = env.step(actions)
+                #     done = terminated | truncated
+
+                #     # Update WM buffers and hiddens with real action and obs following step() logic
+                #     world_model_env.act_buffer[:, -1] = actions
+                #     predicted_obs, _ = world_model_env.sampler.sample(world_model_env.obs_buffer, world_model_env.act_buffer)
+                #     test_sanity_rew, _, (world_model_env.hx_rew_end, world_model_env.cx_rew_end) = world_model_env.rew_end_model.predict_rew_end(
+                #         world_model_env.obs_buffer[:, -1:],
+                #         world_model_env.act_buffer[:, -1:],
+                #         obs.unsqueeze(1),
+                #         (world_model_env.hx_rew_end, world_model_env.cx_rew_end),
+                #     )
+                #     rew_model_reward = Categorical(logits=test_sanity_rew).sample().squeeze(1) - 1.0
+                #     world_model_env.obs_buffer = world_model_env.obs_buffer.roll(-1, dims=1)
+                #     world_model_env.act_buffer = world_model_env.act_buffer.roll(-1, dims=1)
+                #     world_model_env.obs_buffer[:, -1] = obs # Real obs to build buffer
+
+                if use_real_step: #entropy < self._cfg.evaluation.entropy_threshold:
                     planning_flag = 0
                     obs, rewards, terminated, truncated, infos = env.step(actions)
                     done = terminated | truncated
                     episode_rewards.append(rewards)
 
-                    # Update WM buffers and hiddens
+                    # Update WM buffers and hiddens with real action and obs following step() logic
                     world_model_env.act_buffer[:, -1] = actions
-                    world_model_env.obs_buffer = world_model_env.obs_buffer.roll(-1, dims=1)
-                    world_model_env.act_buffer = world_model_env.act_buffer.roll(-1, dims=1)
-                    world_model_env.obs_buffer[:, -1] = obs
-
-                    _, _, (world_model_env.hx_rew_end, world_model_env.cx_rew_end) = world_model_env.rew_end_model.predict_rew_end(
+                    predicted_obs, _ = world_model_env.sampler.sample(world_model_env.obs_buffer, world_model_env.act_buffer) # Added to test
+                    test_sanity_rew, _, (world_model_env.hx_rew_end, world_model_env.cx_rew_end) = world_model_env.rew_end_model.predict_rew_end(
                         world_model_env.obs_buffer[:, -1:],
                         world_model_env.act_buffer[:, -1:],
-                        obs.repeat(world_model_env.obs_buffer.shape[0], 1, 1, 1),
+                        obs.unsqueeze(1),
                         (world_model_env.hx_rew_end, world_model_env.cx_rew_end),
                     )
+                    rew_model_reward = Categorical(logits=test_sanity_rew).sample().squeeze(1) - 1.0
+                    world_model_env.obs_buffer = world_model_env.obs_buffer.roll(-1, dims=1)
+                    world_model_env.act_buffer = world_model_env.act_buffer.roll(-1, dims=1)
+                    world_model_env.obs_buffer[:, -1] = obs # Changed from obs to predicted_obs to test
 
                     # all_actions.append(actions.cpu())
                     entropies.append(entropy)
                     all_probs.append(probs)
 
-                else:
+                else: # Planning step
                     # Now we test out every action inside the world model and select the best one
                     # Cannot step() with every action as this will update the buffers.
                     # Copy some of the WM step() code and use it to predict obs and rewards
                     planning_flag = 100
 
-                    best_action = None
-                    best_reward = -10000
-                    # Backup buffers for planning
-                    obs_buffer_base = world_model_env.obs_buffer.clone()
-                    act_buffer_base = world_model_env.act_buffer.clone()
-
-                    for a in range(env.num_actions):
-                        # Clone clean copy for this candidate action
-                        obs_buffer = obs_buffer_base.roll(-1, dims=1).clone()
-                        act_buffer = act_buffer_base.roll(-1, dims=1).clone()
-
-                        obs_buffer[:, -2] = obs  # obs_t (goes to -2)
-                        act_buffer[:, -2] = a    # candidate a_t (goes to -2)
-
-                        # Sample next_obs (imagined obs_{t+1}) and update obs_buffer
-                        next_obs, _ = world_model_env.sampler.sample(obs_buffer, act_buffer)
-                        obs_buffer[:, -1] = next_obs
-
-                        # Use obs_t, a_t, obs_hat_{t+1} for reward prediction
-                        logits_rew, *_ = world_model_env.rew_end_model.predict_rew_end(
-                            obs_buffer[:, -2:-1], act_buffer[:, -2:-1], obs_buffer[:, -1:]
-                        )
-
-                        rew = Categorical(logits=logits_rew).sample().squeeze(1) - 1.0
-                        probs = torch.softmax(logits_rew, dim=-1).cpu()
-                        print(probs)
-
-                        if max(rew).item() > best_reward:
-                            best_reward = max(rew).item()
-                            best_action = torch.tensor([a], device=self._device)
-                            print(f"Best action: {best_action}")
+                    best_action, wm_predicted_obs = multistep_planning()
 
                     obs, rewards, terminated, truncated, infos = env.step(best_action)
                     done = terminated | truncated
 
                     # Update WM buffers and hiddens with the best action
                     world_model_env.act_buffer[:, -1] = best_action
-                    world_model_env.obs_buffer = world_model_env.obs_buffer.roll(-1, dims=1)
-                    world_model_env.act_buffer = world_model_env.act_buffer.roll(-1, dims=1)
-                    world_model_env.obs_buffer[:, -1] = obs
-                    
-                    _, _, (world_model_env.hx_rew_end, world_model_env.cx_rew_end) = world_model_env.rew_end_model.predict_rew_end(
+                    predicted_obs, _ = world_model_env.sampler.sample(world_model_env.obs_buffer, world_model_env.act_buffer) # Added to test
+                    test_sanity_rew, _, (world_model_env.hx_rew_end, world_model_env.cx_rew_end) = world_model_env.rew_end_model.predict_rew_end(
                         world_model_env.obs_buffer[:, -1:],
                         world_model_env.act_buffer[:, -1:],
-                        obs.repeat(world_model_env.obs_buffer.shape[0], 1, 1, 1),
+                        obs.unsqueeze(1),
                         (world_model_env.hx_rew_end, world_model_env.cx_rew_end),
                     )
+                    rew_model_reward = Categorical(logits=test_sanity_rew).sample().squeeze(1) - 1.0
+                    world_model_env.obs_buffer = world_model_env.obs_buffer.roll(-1, dims=1)
+                    world_model_env.act_buffer = world_model_env.act_buffer.roll(-1, dims=1)
+                    world_model_env.obs_buffer[:, -1] = obs # Changed from obs to predicted_obs to test
 
                     # all_actions.append(best_action.cpu())
                     episode_rewards.append(rewards)
 
-                logits_next, value_next, _ = self.agent.actor_critic.predict_act_value(obs, (hx, cx))
+                    # Plotting predicted observations
+                    wm_predicted_obs = torch.stack(wm_predicted_obs, dim=0)
+                    frames = []
+                    for frame in wm_predicted_obs: # Should be 18 of these
+                        img = frame.detach().cpu().numpy()  # [3, 64, 64]
+                        img = np.transpose(img, (1, 2, 0))  # [64, 64, 3]
+                        
+                        # Convert to uint8 if necessary
+                        if img.max() <= 1.0:
+                            img = (img * 255).astype(np.uint8)
+                        else:
+                            img = img.astype(np.uint8)
+                        
+                        frames.append(img)
+
+                    # Horizontally stack frames: [64, 64 * 4, 3]
+                    grid = np.concatenate(frames, axis=1)
+                    wandb.log({"predicted_next_obs": wandb.Image(Image.fromarray(grid))})
+
+                logits_next, value_next, _ = self.agent.actor_critic.predict_act_value(obs, (self.hx, self.cx))
                 td_error = (rewards + self._cfg.actor_critic.actor_critic_loss.gamma * value_next - value).abs()
                 episode_td_errors.append(td_error.item())
 
+
+                # Plotting WM images to wandb
+                wm_obs_plot = world_model_env.obs_buffer[0,:,:,:,:]  # [4, 3, 64, 64]
+                # Convert to numpy and permute to HWC format
+                frames = []
+                for frame in wm_obs_plot:
+                    img = frame.detach().cpu().numpy()  # [3, 64, 64]
+                    img = np.transpose(img, (1, 2, 0))  # [64, 64, 3]
+                    
+                    # Convert to uint8 if necessary
+                    if img.max() <= 1.0:
+                        img = (img * 255).astype(np.uint8)
+                    else:
+                        img = img.astype(np.uint8)
+                    
+                    frames.append(img)
+
+                # Horizontally stack frames: [64, 64 * 4, 3]
+                grid = np.concatenate(frames, axis=1)
+                wandb.log({"wm_obs_sequence": wandb.Image(Image.fromarray(grid))})
+
+                # Plotting real images to wandb
+                obs_plot = obs
+                # Convert to numpy and permute to HWC format
+                frames = []
+                for frame in obs_plot:
+                    img = frame.detach().cpu().numpy()  # [3, 64, 64]
+                    img = np.transpose(img, (1, 2, 0))  # [64, 64, 3]
+                    
+                    # Convert to uint8 if necessary
+                    if img.max() <= 1.0:
+                        img = (img * 255).astype(np.uint8)
+                    else:
+                        img = img.astype(np.uint8)
+                    
+                    frames.append(img)
+
+                # Horizontally stack frames: [64, 64 * 4, 3]
+                grid = np.concatenate(frames, axis=1)
+                wandb.log({"obs_sequence": wandb.Image(Image.fromarray(grid))})
+                
+
+                # Log the step
                 wandb.log({
                     "eval_step": step,
                     "planning_flag": planning_flag,
                     "actor_critic/eval/planned_value": value,
                     "actor_critic/eval/planned_td_error": td_error.item(),
                     "actor_critic/eval/planned_step_reward": rewards.item(),
+                    "actor_critic/eval/planned_rew_model_reward": rew_model_reward.item(),
                     "actor_critic/eval/planned_cumulative_reward": sum(episode_rewards),
                     "actor_critic/eval/planned_mean_action_distribution": wandb.Histogram(probs.mean(dim=0).numpy()),
                 })

@@ -55,11 +55,21 @@ class WorldModelEnv:
     @torch.no_grad()
     def reset_dead(self, dead: torch.BoolTensor) -> None:
         obs, act, (hx, cx) = self.generator_init.send(dead.sum().item())
-        self.obs_buffer[dead] = obs
+        self.obs_buffer[dead] = torch.zeros_like(obs)
         self.act_buffer[dead] = act
         self.hx_rew_end[:, dead] = hx
         self.cx_rew_end[:, dead] = cx
         self.ep_len[dead] = 0
+    
+    @torch.no_grad()
+    def reset_no_data(self) -> ResetOutput:
+        obs, act, (hx, cx) = self.generator_init.send(self.num_envs)
+        self.obs_buffer = torch.zeros_like(obs)
+        self.act_buffer = torch.zeros_like(act)
+        self.hx_rew_end = torch.zeros_like(hx)
+        self.cx_rew_end = torch.zeros_like(cx)
+        self.ep_len = torch.zeros(self.num_envs, dtype=torch.long, device=obs.device)
+        return self.obs_buffer[:, -1], {}
 
     @torch.no_grad()
     def step(self, act: torch.LongTensor) -> StepOutput:

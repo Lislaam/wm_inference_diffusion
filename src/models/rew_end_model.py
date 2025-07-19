@@ -43,7 +43,7 @@ class RewEndModel(nn.Module):
         self,
         obs: Tensor,
         act: Tensor,
-        next_ob: Tensor,
+        next_obs: Tensor,
         hx_cx: Optional[Tuple[Tensor, Tensor]] = None,
     ) -> Tuple[Tensor, Tensor, Tuple[Tensor, Tensor]]:
         b, t, c, h, w = obs.shape
