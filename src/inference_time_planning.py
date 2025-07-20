@@ -12,7 +12,8 @@ import torch
 import torch.distributed as dist
 from torch.utils.data import DataLoader
 from torch.distributions.categorical import Categorical
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
+
 from tqdm import tqdm, trange
 import wandb
 
@@ -322,49 +323,23 @@ class WMInference(StateDictMixin):
         episode_td_errors = []
         entropies = []
         all_probs = []
-        # all_obs = []
-        # all_actions = []
 
-        self.hx = torch.zeros(env.num_envs, self.agent.actor_critic.lstm_dim, device=self._device)
-        self.cx = torch.zeros(env.num_envs, self.agent.actor_critic.lstm_dim, device=self._device)
+        self.agent.hx = torch.zeros(env.num_envs, self.agent.actor_critic.lstm_dim, device=self._device)
+        self.agent.cx = torch.zeros(env.num_envs, self.agent.actor_critic.lstm_dim, device=self._device)
 
         step = 0
         planning_flag = 0
         for i in trange(num_episodes, desc="Evaluating actor-critic with planning"):
             if not done:
-                logits, value, (self.hx, self.cx) = self.agent.actor_critic.predict_act_value(obs, (self.hx, self.cx))
+                logits, value, (self.agent.hx, self.agent.cx) = self.agent.actor_critic.predict_act_value(obs, (self.agent.hx, self.agent.cx))
                 dist = Categorical(logits=logits)
                 actions = dist.probs.argmax(dim=-1)
                 probs = dist.probs.detach().cpu()
                 entropy = dist.entropy().detach().cpu().item() / math.log(2)
 
-                # all_obs.append(obs.cpu())
-
                 use_real_step = (i < self._cfg.agent.denoiser.inner_model.num_steps_conditioning) or (entropy < self._cfg.evaluation.entropy_threshold)
 
-                # if i < self._cfg.agent.denoiser.inner_model.num_steps_conditioning:
-                #     # During the first steps, we just use the real environment
-                #     # to collect data and build the buffers for planning.
-                #     # This is needed to have enough data in the buffers for the WM to work.
-                #     planning_flag = 0
-                #     obs, rewards, terminated, truncated, infos = env.step(actions)
-                #     done = terminated | truncated
-
-                #     # Update WM buffers and hiddens with real action and obs following step() logic
-                #     world_model_env.act_buffer[:, -1] = actions
-                #     predicted_obs, _ = world_model_env.sampler.sample(world_model_env.obs_buffer, world_model_env.act_buffer)
-                #     test_sanity_rew, _, (world_model_env.hx_rew_end, world_model_env.cx_rew_end) = world_model_env.rew_end_model.predict_rew_end(
-                #         world_model_env.obs_buffer[:, -1:],
-                #         world_model_env.act_buffer[:, -1:],
-                #         obs.unsqueeze(1),
-                #         (world_model_env.hx_rew_end, world_model_env.cx_rew_end),
-                #     )
-                #     rew_model_reward = Categorical(logits=test_sanity_rew).sample().squeeze(1) - 1.0
-                #     world_model_env.obs_buffer = world_model_env.obs_buffer.roll(-1, dims=1)
-                #     world_model_env.act_buffer = world_model_env.act_buffer.roll(-1, dims=1)
-                #     world_model_env.obs_buffer[:, -1] = obs # Real obs to build buffer
-
-                if use_real_step: #entropy < self._cfg.evaluation.entropy_threshold:
+                if use_real_step:
                     planning_flag = 0
                     obs, rewards, terminated, truncated, infos = env.step(actions)
                     done = terminated | truncated
@@ -384,7 +359,6 @@ class WMInference(StateDictMixin):
                     world_model_env.act_buffer = world_model_env.act_buffer.roll(-1, dims=1)
                     world_model_env.obs_buffer[:, -1] = obs # Changed from obs to predicted_obs to test
 
-                    # all_actions.append(actions.cpu())
                     entropies.append(entropy)
                     all_probs.append(probs)
 
@@ -394,7 +368,8 @@ class WMInference(StateDictMixin):
                     # Copy some of the WM step() code and use it to predict obs and rewards
                     planning_flag = 100
 
-                    best_action, wm_predicted_obs = multistep_planning()
+                    best_action, action_predicted_rews, wm_predicted_obs = multistep_planning(self.agent, world_model_env,
+                                                                       self.env.num_actions, self._cfg.evaluation.planning_steps)
 
                     obs, rewards, terminated, truncated, infos = env.step(best_action)
                     done = terminated | truncated
@@ -413,32 +388,49 @@ class WMInference(StateDictMixin):
                     world_model_env.act_buffer = world_model_env.act_buffer.roll(-1, dims=1)
                     world_model_env.obs_buffer[:, -1] = obs # Changed from obs to predicted_obs to test
 
-                    # all_actions.append(best_action.cpu())
                     episode_rewards.append(rewards)
 
-                    # Plotting predicted observations
-                    wm_predicted_obs = torch.stack(wm_predicted_obs, dim=0)
-                    frames = []
-                    for frame in wm_predicted_obs: # Should be 18 of these
-                        img = frame.detach().cpu().numpy()  # [3, 64, 64]
-                        img = np.transpose(img, (1, 2, 0))  # [64, 64, 3]
-                        
-                        # Convert to uint8 if necessary
-                        if img.max() <= 1.0:
-                            img = (img * 255).astype(np.uint8)
-                        else:
-                            img = img.astype(np.uint8)
-                        
-                        frames.append(img)
+                    # Constants
+                    frame_height, frame_width = 64, 64
+                    font = ImageFont.load_default()
 
-                    # Horizontally stack frames: [64, 64 * 4, 3]
-                    grid = np.concatenate(frames, axis=1)
-                    wandb.log({"predicted_next_obs": wandb.Image(Image.fromarray(grid))})
+                    # Convert and annotate each frame
+                    grid_rows = []
+                    for row_idx in range(len(wm_predicted_obs[0])):  # for each of the n rows
+                        row_images = []
+                        for col_idx in range(len(wm_predicted_obs)):  # for each of the a columns
+                            frame = wm_predicted_obs[col_idx][row_idx]  # [3, 64, 64]
+                            img = frame.detach().cpu().numpy()
+                            img = np.transpose(img, (1, 2, 0))  # [64, 64, 3]
 
-                logits_next, value_next, _ = self.agent.actor_critic.predict_act_value(obs, (self.hx, self.cx))
-                td_error = (rewards + self._cfg.actor_critic.actor_critic_loss.gamma * value_next - value).abs()
-                episode_td_errors.append(td_error.item())
+                            # Convert to uint8
+                            if img.max() <= 1.0:
+                                img = (img * 255).astype(np.uint8)
+                            else:
+                                img = img.astype(np.uint8)
 
+                            pil_img = Image.fromarray(img)
+                            draw = ImageDraw.Draw(pil_img)
+
+                            # Get reward and color
+                            rew = action_predicted_rews[col_idx, row_idx]
+                            if rew == 1:
+                                color = (0, 255, 0)
+                            elif rew == -1:
+                                color = (0, 128, 255)
+                            else:
+                                color = (255, 255, 255)
+
+                            draw.text((2, 2), f"R={rew:.0f}", fill=color, font=font)
+                            row_images.append(np.array(pil_img))
+
+                        # Horizontally stack the row
+                        row_strip = np.concatenate(row_images, axis=1)  # [64, 64*a, 3]
+                        grid_rows.append(row_strip)
+                    # Vertically stack the rows to form final grid
+                    final_grid = np.concatenate(grid_rows, axis=0)  # [64*n, 64*a, 3]
+                    # Log to wandb
+                    wandb.log({"wm_grid_rewards": wandb.Image(Image.fromarray(final_grid))})
 
                 # Plotting WM images to wandb
                 wm_obs_plot = world_model_env.obs_buffer[0,:,:,:,:]  # [4, 3, 64, 64]
@@ -479,7 +471,11 @@ class WMInference(StateDictMixin):
                 # Horizontally stack frames: [64, 64 * 4, 3]
                 grid = np.concatenate(frames, axis=1)
                 wandb.log({"obs_sequence": wandb.Image(Image.fromarray(grid))})
-                
+
+
+                logits_next, value_next, _ = self.agent.actor_critic.predict_act_value(obs, (self.agent.hx, self.agent.cx))
+                td_error = (rewards + self._cfg.actor_critic.actor_critic_loss.gamma * value_next - value).abs()
+                episode_td_errors.append(td_error.item())
 
                 # Log the step
                 wandb.log({

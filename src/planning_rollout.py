@@ -33,29 +33,39 @@ def multistep_planning(agent, world_model_env, num_actions, num_step_forcast) ->
     Returns:
         best_action: The best next step to take based on the planning.
     """
-    best_action = None
-    best_reward = 0
     candidate_actions = []
+    action_predicted_rews = np.zeros((num_actions, num_step_forcast)) # Store predicted rewards for each action to log
+    wm_predicted_obs = [[] for _ in range(num_actions)]  # Store predicted observations for plotting
+
     # Backup buffers for planning
     obs_buffer_base = world_model_env.obs_buffer.clone()
     act_buffer_base = world_model_env.act_buffer.clone()
-    wm_predicted_obs = []
+    wm_hx_base = world_model_env.hx_rew_end.clone()
+    wm_cx_base = world_model_env.cx_rew_end.clone()
+    hx_base = agent.hx.clone()
+    cx_base = agent.cx.clone()
+    
     for a in range(num_actions):
+        # Propose an action a, and estimate rollout reward in imagination using real actor-critic
         # Following WM step() logic but not updating buffers and hiddens
         # Copy buffers to avoid modifying the original ones
-        rews = [] # Store rewards for multiple samples
         obs_buffer = obs_buffer_base.clone()
         act_buffer = act_buffer_base.clone()
+        wm_hx = wm_hx_base.clone()
+        wm_cx = wm_cx_base.clone()
+        agent_hx = hx_base.clone()
+        agent_cx = cx_base.clone()
 
         act_buffer[:, -1] = a  # candidate action
 
         for i in range(num_step_forcast):
-            next_obs, _ = world_model_env.sampler.sample(obs_buffer_base, act_buffer_base)
-            logits_rew, *_ = world_model_env.rew_end_model.predict_rew_end(
+            rews = [] # Store rewards for multiple samples
+            next_obs, _ = world_model_env.sampler.sample(obs_buffer, act_buffer)
+            logits_rew, _, (wm_hx, wm_cx) = world_model_env.rew_end_model.predict_rew_end(
                 obs_buffer[:, -1:], act_buffer[:, -1:], next_obs.unsqueeze(1),
-                (world_model_env.hx_rew_end, world_model_env.cx_rew_end)
+                (wm_hx, wm_cx)
             )
-            for i in range (10):  # Sample multiple times to get a good estimate
+            for _ in range (10):  # Sample multiple times to get a good estimate
                 rews.append((Categorical(logits=logits_rew).sample().squeeze(1) - 1.0).item())
                     # in {-1, 0, 1}
             probs = torch.softmax(logits_rew, dim=-1).cpu()
@@ -65,19 +75,21 @@ def multistep_planning(agent, world_model_env, num_actions, num_step_forcast) ->
             act_buffer = act_buffer.roll(-1, dims=1)
             obs_buffer[:, -1] = next_obs  # predicted next obs
 
-            # Store predicted obs for plotting
-            wm_predicted_obs.append(next_obs.squeeze())
+            # Store predicted obs and rewards for logging
+            wm_predicted_obs[a].append(next_obs.squeeze())
+            action_predicted_rews[a, i] = max(rews)
 
-            if max(rews) > best_reward:
-                best_reward = max(rews)
-                candidate_actions = []
-                candidate_actions.append(a)
-                print(f"Best action candidate: {a}")
-            elif max(rews) == best_reward:
-                candidate_actions.append(a)
-                # print(f"Action {a} is a candidate with reward {max(rews)}")
-        
+            # Get actor-critic to choose next action
+            logits, _, (agent_hx, agent_cx) = agent.actor_critic.predict_act_value(
+                next_obs, (agent_hx, agent_cx) # Squeeze obs to fit
+            )
+            dist = Categorical(logits=logits)
+            act_buffer[:, -1] = dist.probs.argmax(dim=-1) # At the last step this will be reset unused
+
+    best_score = max([np.sum(action_predicted_rews[a,:]) for a in range(num_actions)])
+    candidate_actions = [a for a in range(num_actions) if np.sum(action_predicted_rews[a,:]) == best_score]
+
     best_action = torch.tensor([np.random.choice(np.array(candidate_actions))])  # Randomly select one of the best actions
     print(f"Best action selected: {best_action} from {candidate_actions}")
 
-    return best_action, wm_predicted_obs
+    return best_action, action_predicted_rews, wm_predicted_obs
