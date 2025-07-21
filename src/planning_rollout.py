@@ -84,7 +84,7 @@ def multistep_planning(agent, world_model_env, num_actions, num_step_forcast) ->
                 next_obs, (agent_hx, agent_cx) # Squeeze obs to fit
             )
             dist = Categorical(logits=logits)
-            act_buffer[:, -1] = dist.probs.argmax(dim=-1) # At the last step this will be reset unused
+            act_buffer[:, -1] = dist.sample() # Not deterministic like #.probs.argmax(dim=-1) # At the last step this will be reset unused
 
     best_score = max([np.sum(action_predicted_rews[a,:]) for a in range(num_actions)])
     candidate_actions = [a for a in range(num_actions) if np.sum(action_predicted_rews[a,:]) == best_score]

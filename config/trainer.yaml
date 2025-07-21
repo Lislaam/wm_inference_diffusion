@@ -64,7 +64,7 @@ evaluation:
   should: True
   every: 10
   entropy_threshold: 2
-  planning_steps: 10
+  planning_steps: 0
 
 world_model_env:
   _target_: envs.WorldModelEnvConfig

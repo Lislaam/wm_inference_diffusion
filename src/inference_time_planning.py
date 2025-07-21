@@ -188,12 +188,16 @@ class WMInference(StateDictMixin):
         wandb.define_metric("actor_critic/eval/td_error", step_metric="eval_step")
         wandb.define_metric("actor_critic/eval/planned_td_error", step_metric="eval_step")
         wandb.define_metric("actor_critic/eval/planning_flag", step_metric="eval_step")
+        wandb.define_metric("actor_critic/eval/unplanned_obs_sequence", step_metric="eval_step")
+        wandb.define_metric("actor_critic/eval/obs_sequence", step_metric="eval_step")
+        wandb.define_metric("actor_critic/eval/wm_obs_sequence", step_metric="eval_step")
+
 
         # Evaluation
-        # start_time = time.time()
-        # self.eval_plain()
-        # if self._rank == 0:
-        #     wandb.log({"duration_plain": (time.time() - start_time) / 3600})
+        start_time = time.time()
+        self.eval_plain()
+        if self._rank == 0:
+            wandb.log({"duration_plain": (time.time() - start_time) / 3600})
 
         # Same env with WM planning
         start_time = time.time()
@@ -242,13 +246,13 @@ class WMInference(StateDictMixin):
                 logits, value, (hx, cx) = out
 
                 dist = Categorical(logits=logits)
-                actions = dist.probs.argmax(dim=-1)
+                action = dist.sample() # Not perfectly deterministic like the argmax #.probs.argmax(dim=-1)
                 probs = dist.probs.detach().cpu()
                 entropy = dist.entropy().detach().cpu().item() / math.log(2)
 
                 value_t = value.clone().detach()
 
-                obs, rewards, terminated, truncated, infos = env.step(actions)
+                obs, rewards, terminated, truncated, infos = env.step(action)
                 done = terminated | truncated
 
                 with torch.no_grad():
@@ -276,6 +280,26 @@ class WMInference(StateDictMixin):
                 })
 
                 step += 1
+
+                # Plotting real images to wandb
+                obs_plot = obs
+                # Convert to numpy and permute to HWC format
+                frames = []
+                for frame in obs_plot:
+                    img = frame.detach().cpu().numpy()  # [3, 64, 64]
+                    img = np.transpose(img, (1, 2, 0))  # [64, 64, 3]
+                    
+                    # Convert to uint8 if necessary
+                    if img.max() <= 1.0:
+                        img = (img * 255).astype(np.uint8)
+                    else:
+                        img = img.astype(np.uint8)
+                    
+                    frames.append(img)
+
+                # Horizontally stack frames: [64, 64 * 4, 3]
+                grid = np.concatenate(frames, axis=1)
+                wandb.log({"unplanned_obs_sequence": wandb.Image(Image.fromarray(grid))}) # Need this to be same as in eval_with_planning UNTIL the first planning step
 
         # Final summary stats
         mean_return = sum(episode_rewards[:num_episodes]) / num_episodes
@@ -333,11 +357,11 @@ class WMInference(StateDictMixin):
             if not done:
                 logits, value, (self.agent.hx, self.agent.cx) = self.agent.actor_critic.predict_act_value(obs, (self.agent.hx, self.agent.cx))
                 dist = Categorical(logits=logits)
-                actions = dist.probs.argmax(dim=-1)
+                actions = dist.sample() # Not deterministic #.probs.argmax(dim=-1)
                 probs = dist.probs.detach().cpu()
                 entropy = dist.entropy().detach().cpu().item() / math.log(2)
 
-                use_real_step = (i < self._cfg.agent.denoiser.inner_model.num_steps_conditioning) or (entropy < self._cfg.evaluation.entropy_threshold)
+                use_real_step = (i < self._cfg.agent.denoiser.inner_model.num_steps_conditioning) or (entropy < self._cfg.evaluation.entropy_threshold) or (self._cfg.evaluation.planning_steps == 0)
 
                 if use_real_step:
                     planning_flag = 0
