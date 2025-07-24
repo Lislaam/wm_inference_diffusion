@@ -1,28 +1,11 @@
-from functools import partial
-from pathlib import Path
-import shutil
-import time
-from typing import List, Optional, Tuple
 import math
-
 from hydra.utils import instantiate
 import numpy as np
-from omegaconf import DictConfig, OmegaConf
 import torch
-import torch.distributed as dist
-from torch.utils.data import DataLoader
 from torch.distributions.categorical import Categorical
-from PIL import Image
-from tqdm import tqdm, trange
-import wandb
-
-from agent import Agent
-from coroutines.collector import make_collector, NumToCollect
-from data import BatchSampler, collate_segments_to_batch, Dataset, DatasetTraverser
-from envs import make_atari_env, WorldModelEnv
 
 
-def multistep_planning(agent, world_model_env, num_actions, num_step_forcast) -> torch.Tensor:
+def multistep_planning(agent, world_model_env, num_actions, num_step_forcast, gamma, mode='reward') -> torch.Tensor:
     """
     Perform multistep planning using the world model environment.
     Args:
@@ -33,8 +16,12 @@ def multistep_planning(agent, world_model_env, num_actions, num_step_forcast) ->
     Returns:
         best_action: The best next step to take based on the planning.
     """
+    assert mode in ['reward', 'value', 'td'], "Mode must be either 'reward' or 'value' or 'td'"
+
     candidate_actions = []
     action_predicted_rews = np.zeros((num_actions, num_step_forcast)) # Store predicted rewards for each action to log
+    action_predicted_values = np.zeros((num_actions, num_step_forcast))
+    action_predicted_tds = np.zeros((num_actions, num_step_forcast-1))
     wm_predicted_obs = [[] for _ in range(num_actions)]  # Store predicted observations for plotting
 
     # Backup buffers for planning
@@ -68,28 +55,41 @@ def multistep_planning(agent, world_model_env, num_actions, num_step_forcast) ->
             for _ in range (10):  # Sample multiple times to get a good estimate
                 rews.append((Categorical(logits=logits_rew).sample().squeeze(1) - 1.0).item())
                     # in {-1, 0, 1}
-            probs = torch.softmax(logits_rew, dim=-1).cpu()
-            print(probs)
+            # probs = torch.softmax(logits_rew, dim=-1).cpu()
+            # print(probs)
 
             obs_buffer = obs_buffer.roll(-1, dims=1)
             act_buffer = act_buffer.roll(-1, dims=1)
             obs_buffer[:, -1] = next_obs  # predicted next obs
 
-            # Store predicted obs and rewards for logging
-            wm_predicted_obs[a].append(next_obs.squeeze())
-            action_predicted_rews[a, i] = max(rews)
-
             # Get actor-critic to choose next action
-            logits, _, (agent_hx, agent_cx) = agent.actor_critic.predict_act_value(
+            logits, value, (agent_hx, agent_cx) = agent.actor_critic.predict_act_value(
                 next_obs, (agent_hx, agent_cx) # Squeeze obs to fit
             )
             dist = Categorical(logits=logits)
-            act_buffer[:, -1] = dist.sample() # Not deterministic like #.probs.argmax(dim=-1) # At the last step this will be reset unused
+            entropy = dist.entropy().detach().cpu().item() / math.log(2) # May need to watch this
+            act_buffer[:, -1] = dist.sample() # At the last step this will be reset unused
 
-    best_score = max([np.sum(action_predicted_rews[a,:]) for a in range(num_actions)])
-    candidate_actions = [a for a in range(num_actions) if np.sum(action_predicted_rews[a,:]) == best_score]
+            # Store predicted obs and rewards etc for logging
+            wm_predicted_obs[a].append(next_obs.squeeze())
+            action_predicted_rews[a, i] = max(rews)
+            action_predicted_values[a, i] = value.detach().cpu().item()
+            if i > 0:  # TD error only makes sense from the second step
+                action_predicted_tds[a, i-1] = (max(rews) + gamma * value - last_value).abs()
+            
+            last_value = value.detach().cpu().item()
+
+    if mode == 'reward':
+        best_score = max([np.sum(action_predicted_rews[a,:]) for a in range(num_actions)])
+        candidate_actions = [a for a in range(num_actions) if np.sum(action_predicted_rews[a,:]) == best_score]
+    elif mode == 'value':
+        best_score = max([np.sum(action_predicted_values[a,:]) for a in range(num_actions)])
+        candidate_actions = [a for a in range(num_actions) if np.sum(action_predicted_values[a,:]) == best_score]
+    elif mode == 'td':
+        best_score = min([np.sum(action_predicted_tds[a,:]) for a in range(num_actions)]) # MINIMISE the td error for best action
+        candidate_actions = [a for a in range(num_actions) if np.sum(action_predicted_tds[a,:]) == best_score]
 
     best_action = torch.tensor([np.random.choice(np.array(candidate_actions))])  # Randomly select one of the best actions
     print(f"Best action selected: {best_action} from {candidate_actions}")
 
-    return best_action, action_predicted_rews, wm_predicted_obs
+    return best_action, np.array(candidate_actions), action_predicted_rews, wm_predicted_obs

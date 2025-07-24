@@ -11,7 +11,7 @@ wandb:
   mode: online
   project: world_models
   entity: null
-  name: null
+  name: ${evaluation.planning_steps}_roll_${evaluation.entropy_threshold}_ent_${evaluation.planning_mode}
   group: null
   tags: null
   notes: null
@@ -24,12 +24,12 @@ initialization:
 
 common:
   devices: 0  # int, list of int, cpu, or all 
-  seed: null
+  seed: 2
   resume: False # do not modify, set by scripts/resume.sh only.
 
 checkpointing:
-  save_agent_every: 5
-  num_to_keep: 11  # number of checkpoints to keep, use null to disable
+  save_agent_every: 0
+  num_to_keep: null  # number of checkpoints to keep, use null to disable
 
 collection:
   train:
@@ -65,6 +65,7 @@ evaluation:
   every: 10
   entropy_threshold: 2
   planning_steps: 0
+  planning_mode: null # reward, value, or td
 
 world_model_env:
   _target_: envs.WorldModelEnvConfig

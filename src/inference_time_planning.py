@@ -51,7 +51,8 @@ class WMInference(StateDictMixin):
         self._world_size = dist.get_world_size() if dist.is_initialized() else 1
 
         # Pick a random seed
-        self.seed = set_seed(0)
+        self.seed_number = self._cfg.common.seed
+        self.seed = set_seed(self.seed_number)
             # torch.seed() % 10 ** 9)
 
         # Device
@@ -74,15 +75,15 @@ class WMInference(StateDictMixin):
         # Checkpointing
         self._path_ckpt_dir = Path("trained_models")
         self._path_state_ckpt = self._path_ckpt_dir / "state.pt"
-        self._keep_agent_copies = partial(
-            keep_agent_copies_every,
-            every=cfg.checkpointing.save_agent_every,
-            path_ckpt_dir=self._path_ckpt_dir,
-            num_to_keep=cfg.checkpointing.num_to_keep,
-        )
-        self._save_info_for_import_script = partial(
-            save_info_for_import_script, run_name=cfg.wandb.name, path_ckpt_dir=self._path_ckpt_dir
-        )
+        # self._keep_agent_copies = partial(
+        #     keep_agent_copies_every,
+        #     every=cfg.checkpointing.save_agent_every,
+        #     path_ckpt_dir=self._path_ckpt_dir,
+        #     num_to_keep=cfg.checkpointing.num_to_keep,
+        # )
+        # self._save_info_for_import_script = partial(
+        #     save_info_for_import_script, run_name=cfg.wandb.name, path_ckpt_dir=self._path_ckpt_dir
+        # )
 
         # First time, init files hierarchy
         if not cfg.common.resume and self._rank == 0:
@@ -188,23 +189,22 @@ class WMInference(StateDictMixin):
         wandb.define_metric("actor_critic/eval/td_error", step_metric="eval_step")
         wandb.define_metric("actor_critic/eval/planned_td_error", step_metric="eval_step")
         wandb.define_metric("actor_critic/eval/planning_flag", step_metric="eval_step")
-        wandb.define_metric("actor_critic/eval/unplanned_obs_sequence", step_metric="eval_step")
-        wandb.define_metric("actor_critic/eval/obs_sequence", step_metric="eval_step")
-        wandb.define_metric("actor_critic/eval/wm_obs_sequence", step_metric="eval_step")
-
+        wandb.define_metric("unplanned_obs_sequence", step_metric="eval_step")
+        wandb.define_metric("obs_sequence", step_metric="eval_step")
+        wandb.define_metric("wm_obs_sequence", step_metric="eval_step")
 
         # Evaluation
-        start_time = time.time()
-        self.eval_plain()
-        if self._rank == 0:
-            wandb.log({"duration_plain": (time.time() - start_time) / 3600})
+        # start_time = time.time()
+        # self.eval_plain()
+        # if self._rank == 0:
+        #     wandb.log({"duration_plain": (time.time() - start_time)})
 
         # Same env with WM planning
         start_time = time.time()
         self.eval_with_planning()
         # Logging
         if self._rank == 0:
-            wandb.log({"duration_with_planning": (time.time() - start_time) / 3600})
+            wandb.log({"duration_with_planning": (time.time() - start_time)})
 
         if dist.is_initialized():
             dist.barrier()
@@ -219,9 +219,7 @@ class WMInference(StateDictMixin):
         """
         self.agent.actor_critic.eval()
 
-        # Create the environments
         env = self.env
-
         # Initialize the real environment
         obs = env.reset(seed=self.seed)[0]
         done = torch.zeros(env.num_envs, dtype=torch.bool, device=self._device)
@@ -246,7 +244,7 @@ class WMInference(StateDictMixin):
                 logits, value, (hx, cx) = out
 
                 dist = Categorical(logits=logits)
-                action = dist.sample() # Not perfectly deterministic like the argmax #.probs.argmax(dim=-1)
+                action = dist.sample() # Not perfectly deterministic like the argmax # .probs.argmax(dim=-1)
                 probs = dist.probs.detach().cpu()
                 entropy = dist.entropy().detach().cpu().item() / math.log(2)
 
@@ -268,19 +266,6 @@ class WMInference(StateDictMixin):
                 entropies.append(entropy)
                 all_probs.append(probs)
 
-                # Per-step logging
-                wandb.log({
-                    "eval_step": step,
-                    "actor_critic/eval/value": value,
-                    "actor_critic/eval/td_error": td_error_mean,
-                    "actor_critic/eval/step_reward": rewards.item(),
-                    "actor_critic/eval/cumulative_reward": sum(episode_rewards),
-                    "actor_critic/eval/policy_entropy": entropy,
-                    "actor_critic/eval/mean_action_distribution": wandb.Histogram(probs.mean(dim=0).numpy()),
-                })
-
-                step += 1
-
                 # Plotting real images to wandb
                 obs_plot = obs
                 # Convert to numpy and permute to HWC format
@@ -299,7 +284,20 @@ class WMInference(StateDictMixin):
 
                 # Horizontally stack frames: [64, 64 * 4, 3]
                 grid = np.concatenate(frames, axis=1)
-                wandb.log({"unplanned_obs_sequence": wandb.Image(Image.fromarray(grid))}) # Need this to be same as in eval_with_planning UNTIL the first planning step
+
+                # Per-step logging
+                wandb.log({
+                    "eval_step": step,
+                    "actor_critic/eval/value": value,
+                    "actor_critic/eval/td_error": td_error_mean,
+                    "actor_critic/eval/step_reward": rewards.item(),
+                    "actor_critic/eval/cumulative_reward": sum(episode_rewards),
+                    "actor_critic/eval/policy_entropy": entropy,
+                    "actor_critic/eval/mean_action_distribution": wandb.Histogram(probs.mean(dim=0).numpy()),
+                    "unplanned_obs_sequence": wandb.Image(Image.fromarray(grid)),
+                })
+
+                step += 1
 
         # Final summary stats
         mean_return = sum(episode_rewards[:num_episodes]) / num_episodes
@@ -312,7 +310,6 @@ class WMInference(StateDictMixin):
         std_td_error = torch.tensor(episode_td_errors).std().item()
 
         all_probs = torch.cat(all_probs, dim=0)
-        mean_probs = all_probs.mean(dim=0)
 
         wandb.log({
             "actor_critic/eval/return_mean": mean_return,
@@ -323,7 +320,6 @@ class WMInference(StateDictMixin):
             "actor_critic/eval/value_std": std_value,
             "actor_critic/eval/td_error_mean": mean_td_error,
             "actor_critic/eval/td_error_std": std_td_error,
-            "actor_critic/eval/mean_action_probs": wandb.Histogram(mean_probs.numpy()),
         })
 
         return None
@@ -357,7 +353,7 @@ class WMInference(StateDictMixin):
             if not done:
                 logits, value, (self.agent.hx, self.agent.cx) = self.agent.actor_critic.predict_act_value(obs, (self.agent.hx, self.agent.cx))
                 dist = Categorical(logits=logits)
-                actions = dist.sample() # Not deterministic #.probs.argmax(dim=-1)
+                actions = dist.sample() # Not deterministic # .probs.argmax(dim=-1)
                 probs = dist.probs.detach().cpu()
                 entropy = dist.entropy().detach().cpu().item() / math.log(2)
 
@@ -392,8 +388,10 @@ class WMInference(StateDictMixin):
                     # Copy some of the WM step() code and use it to predict obs and rewards
                     planning_flag = 100
 
-                    best_action, action_predicted_rews, wm_predicted_obs = multistep_planning(self.agent, world_model_env,
-                                                                       self.env.num_actions, self._cfg.evaluation.planning_steps)
+                    best_action, candidate_actions, action_predicted_rews, wm_predicted_obs = multistep_planning(self.agent, world_model_env,
+                                                                       self.env.num_actions, self._cfg.evaluation.planning_steps, 
+                                                                       self._cfg.actor_critic.actor_critic_loss.gamma,
+                                                                       mode=self._cfg.evaluation.planning_mode)
 
                     obs, rewards, terminated, truncated, infos = env.step(best_action)
                     done = terminated | truncated
@@ -455,6 +453,7 @@ class WMInference(StateDictMixin):
                     final_grid = np.concatenate(grid_rows, axis=0)  # [64*n, 64*a, 3]
                     # Log to wandb
                     wandb.log({"wm_grid_rewards": wandb.Image(Image.fromarray(final_grid))})
+                    wandb.log({"actor_critic/eval/candidate_actions": wandb.Histogram(candidate_actions)})
 
                 # Plotting WM images to wandb
                 wm_obs_plot = world_model_env.obs_buffer[0,:,:,:,:]  # [4, 3, 64, 64]
@@ -471,10 +470,8 @@ class WMInference(StateDictMixin):
                         img = img.astype(np.uint8)
                     
                     frames.append(img)
-
                 # Horizontally stack frames: [64, 64 * 4, 3]
-                grid = np.concatenate(frames, axis=1)
-                wandb.log({"wm_obs_sequence": wandb.Image(Image.fromarray(grid))})
+                wm_grid = np.concatenate(frames, axis=1)
 
                 # Plotting real images to wandb
                 obs_plot = obs
@@ -491,11 +488,8 @@ class WMInference(StateDictMixin):
                         img = img.astype(np.uint8)
                     
                     frames.append(img)
-
                 # Horizontally stack frames: [64, 64 * 4, 3]
                 grid = np.concatenate(frames, axis=1)
-                wandb.log({"obs_sequence": wandb.Image(Image.fromarray(grid))})
-
 
                 logits_next, value_next, _ = self.agent.actor_critic.predict_act_value(obs, (self.agent.hx, self.agent.cx))
                 td_error = (rewards + self._cfg.actor_critic.actor_critic_loss.gamma * value_next - value).abs()
@@ -510,7 +504,10 @@ class WMInference(StateDictMixin):
                     "actor_critic/eval/planned_step_reward": rewards.item(),
                     "actor_critic/eval/planned_rew_model_reward": rew_model_reward.item(),
                     "actor_critic/eval/planned_cumulative_reward": sum(episode_rewards),
-                    "actor_critic/eval/planned_mean_action_distribution": wandb.Histogram(probs.mean(dim=0).numpy()),
+                    "actor_critic/eval/planned_mean_action_distribution": wandb.Histogram(probs.numpy()),
+                    "actor_critic/eval/planned_entropy": entropy,
+                    "obs_sequence": wandb.Image(Image.fromarray(grid)),           # from real obs
+                    "wm_obs_sequence": wandb.Image(Image.fromarray(wm_grid)),     # from world model buffer
                 })
 
                 step += 1
@@ -522,7 +519,6 @@ class WMInference(StateDictMixin):
         mean_td_error = torch.tensor(episode_td_errors).mean().item()
         std_td_error = torch.tensor(episode_td_errors).std().item()
         all_probs = torch.cat(all_probs, dim=0)
-        mean_probs = all_probs.mean(dim=0)
 
         wandb.log({
             "actor_critic/eval/planned_return_mean": mean_return,
@@ -530,8 +526,7 @@ class WMInference(StateDictMixin):
             "actor_critic/eval/planned_entropy_mean": mean_entropy,
             "actor_critic/eval/planned_entropy_std": std_entropy,
             "actor_critic/eval/planned_td_error_mean": mean_td_error,
-            "actor_critic/eval/planned_td_error_std": std_td_error,
-            "actor_critic/eval/planned_mean_action_probs": wandb.Histogram(mean_probs.numpy()),
+            "actor_critic/eval/planned_td_error_std": std_td_error
         })
 
         return None
