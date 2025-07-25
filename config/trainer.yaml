@@ -11,7 +11,7 @@ wandb:
   mode: online
   project: world_models
   entity: null
-  name: ${evaluation.planning_steps}_roll_${evaluation.entropy_threshold}_ent_${evaluation.planning_mode}
+  name: ${evaluation.planning_steps}_roll_${evaluation.entropy_threshold}_ent_${evaluation.planning_mode}_seed_${common.seed}
   group: null
   tags: null
   notes: null
@@ -20,15 +20,15 @@ initialization:
   path_to_ckpt: /homes/53/fpinto/diamond/trained_models/Boxing.pt  # if specified, will load the agent from this checkpoint
   load_denoiser: True
   load_rew_end_model: True
-  load_actor_critic: True # Only want to eval RL agent for my project
+  load_actor_critic: True
 
 common:
   devices: 0  # int, list of int, cpu, or all 
-  seed: 2
+  seed: 1
   resume: False # do not modify, set by scripts/resume.sh only.
 
 checkpointing:
-  save_agent_every: 0
+  save_agent_every: 9999999999999999999
   num_to_keep: null  # number of checkpoints to keep, use null to disable
 
 collection:

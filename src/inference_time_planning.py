@@ -30,11 +30,7 @@ from utils import (
     configure_opt,
     count_parameters,
     get_lr_sched,
-    keep_agent_copies_every,
     Logs,
-    build_buffers_for_planning,
-    save_info_for_import_script,
-    save_with_backup,
     set_seed,
     StateDictMixin,
     try_until_no_except,
@@ -75,15 +71,6 @@ class WMInference(StateDictMixin):
         # Checkpointing
         self._path_ckpt_dir = Path("trained_models")
         self._path_state_ckpt = self._path_ckpt_dir / "state.pt"
-        # self._keep_agent_copies = partial(
-        #     keep_agent_copies_every,
-        #     every=cfg.checkpointing.save_agent_every,
-        #     path_ckpt_dir=self._path_ckpt_dir,
-        #     num_to_keep=cfg.checkpointing.num_to_keep,
-        # )
-        # self._save_info_for_import_script = partial(
-        #     save_info_for_import_script, run_name=cfg.wandb.name, path_ckpt_dir=self._path_ckpt_dir
-        # )
 
         # First time, init files hierarchy
         if not cfg.common.resume and self._rank == 0:
