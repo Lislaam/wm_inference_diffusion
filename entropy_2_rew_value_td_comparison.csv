@@ -1,0 +1,8 @@
+Num. Planning Steps,Entropy Threshold,Reward Planning Mean,Reward Planning Std,Value Planning Mean,Value Planning Std,TD-Error Planning Mean,TD-Error Planning Std
+0, 2, 87.6, 6.6, 0, 0, 0, 0
+1, 2, 86.6, 6.9, 89.6, 3.4, 86.3, 6.6
+2, 2, 89.0, 5.7, 88.3, 5.2, 85, 6.5
+5, 2, 90.6, 4.8, 92.6, 4.2, 91.6, 4.8
+10, 2, 89.6, 6.2, 90.6, 4.6, 90.6, 6.8
+15, 2, 93, 2.2, 92.3, 3.9, 86, 10.8
+20, 2, 93, 3.3, 89, 6.2, 91, 3.9
