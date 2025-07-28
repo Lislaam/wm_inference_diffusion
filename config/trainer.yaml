@@ -11,7 +11,7 @@ wandb:
   mode: online
   project: world_models
   entity: null
-  name: ${evaluation.planning_steps}_roll_${evaluation.entropy_threshold}_ent_${evaluation.planning_mode}_seed_${common.seed}
+  name: ${evaluation.planning_steps}_roll_${evaluation.entropy_threshold}_ent_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}
   group: null
   tags: null
   notes: null
@@ -64,8 +64,8 @@ evaluation:
   should: True
   every: 10
   entropy_threshold: 2
-  planning_steps: 0
-  planning_mode: null # reward, value, or td
+  planning_steps: 2
+  planning_mode: td # reward, value, or td
 
 world_model_env:
   _target_: envs.WorldModelEnvConfig
