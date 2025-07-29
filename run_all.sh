@@ -7,7 +7,8 @@ for planning_steps in 1 2 5 10 15 20; do
       CUDA_VISIBLE_DEVICES=0 python src/main.py \
         evaluation.planning_steps=$planning_steps \
         evaluation.entropy_threshold=$entropy_threshold \
-        evaluation.planning_mode=$planning_mode
+        evaluation.planning_mode=$planning_mode \
+        common.seed=0
     done
   done
 done
