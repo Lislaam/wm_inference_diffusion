@@ -23,8 +23,8 @@ initialization:
   load_actor_critic: True
 
 common:
-  devices: 0  # int, list of int, cpu, or all 
-  seed: 1
+  devices: 6  # int, list of int, cpu, or all 
+  seed: 2
   resume: False # do not modify, set by scripts/resume.sh only.
 
 checkpointing:
@@ -63,8 +63,8 @@ training:
 evaluation:
   should: True
   every: 10
-  entropy_threshold: 2
-  planning_steps: 2
+  entropy_threshold: 1
+  planning_steps: 20
   planning_mode: td # reward, value, or td
 
 world_model_env:

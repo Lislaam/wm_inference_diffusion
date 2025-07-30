@@ -8,7 +8,7 @@ for planning_steps in 1 2 5 10 15 20; do
         evaluation.planning_steps=$planning_steps \
         evaluation.entropy_threshold=$entropy_threshold \
         evaluation.planning_mode=$planning_mode \
-        common.seed=2
+        common.seed=0
     done
   done
 done
