@@ -11,7 +11,7 @@ wandb:
   mode: online
   project: world_models
   entity: null
-  name: ${evaluation.planning_steps}_roll_${evaluation.entropy_threshold}_ent_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}
+  name: ${evaluation.planning_steps}_roll_${evaluation.inner_planning_steps}_inner_${evaluation.entropy_threshold}_ent_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}
   group: null
   tags: null
   notes: null
@@ -23,8 +23,8 @@ initialization:
   load_actor_critic: True
 
 common:
-  devices: 6  # int, list of int, cpu, or all 
-  seed: 2
+  devices: 0  # int, list of int, cpu, or all 
+  seed: 0
   resume: False # do not modify, set by scripts/resume.sh only.
 
 checkpointing:
@@ -63,9 +63,11 @@ training:
 evaluation:
   should: True
   every: 10
-  entropy_threshold: 1
-  planning_steps: 20
-  planning_mode: td # reward, value, or td
+  planning_steps: 5
+  entropy_threshold: 2
+  inner_planning_steps: 1 # Number of steps to plan in the inner (meta-planning) loop
+  planning_depth: 3 # Maximum depth of the planning tree
+  planning_mode: value # reward, value, or td
 
 world_model_env:
   _target_: envs.WorldModelEnvConfig

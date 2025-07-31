@@ -113,15 +113,6 @@ class TrainInWM(StateDictMixin):
         if cfg.initialization.path_to_ckpt is not None:
             self.agent.load(**cfg.initialization)
 
-        # Collectors
-        # if not self._is_static_dataset and self._rank == 0:
-        #     self._train_collector = make_collector(
-        #         train_env, self.agent.actor_critic, self.train_dataset, cfg.collection.train.epsilon
-        #     )
-            # self._test_collector = make_collector(
-            #     test_env, self.agent.actor_critic, self.test_dataset, cfg.collection.test.epsilon, reset_every_collect=True
-            # )
-
         ######################################################
 
         # Optimizers and LR schedulers
@@ -218,12 +209,6 @@ class TrainInWM(StateDictMixin):
                     "Initial collection is required for training with a static dataset or model-free training. "
                     "Set `static_dataset.path` to None or `training.model_free` to True in the config."
                 )
-            # else:
-            #     if self._rank == 0:
-            #         self.num_epochs_collect, to_log_ = self.collect_initial_dataset()
-            #         to_log += to_log_
-            #     self.num_epochs_collect, sd_train_dataset = broadcast_if_needed(self.num_epochs_collect, self.train_dataset.state_dict())
-            #     self.train_dataset.load_state_dict(sd_train_dataset)
 
         num_epochs = self.num_epochs_collect + self._cfg.training.num_final_epochs
 
@@ -234,12 +219,6 @@ class TrainInWM(StateDictMixin):
             if self._rank == 0:
                 print(f"\nEpoch {self.epoch} / {num_epochs}\n")
 
-            # Training
-            # should_collect_train = (self._rank == 0 and not self._is_model_free and not self._is_static_dataset and self.epoch <= self.num_epochs_collect)
-
-            # if should_collect_train:
-            #     c = self._cfg.collection.train
-            #     to_log += self._train_collector.send(NumToCollect(steps=c.steps_per_epoch))
             sd_train_dataset, = broadcast_if_needed(self.train_dataset.state_dict())  # update dataset for ranks > 0
             self.train_dataset.load_state_dict(sd_train_dataset)
             
@@ -248,10 +227,6 @@ class TrainInWM(StateDictMixin):
 
             # Evaluation
             should_test = self._rank == 0 and self._cfg.evaluation.should and (self.epoch % self._cfg.evaluation.every == 0)
-            # should_collect_test = should_test and not self._is_static_dataset
-
-            # if should_collect_test:
-            #     to_log += self.collect_test()
 
             if should_test and not self._is_model_free:
                 to_log += self.test_agent()
@@ -268,9 +243,6 @@ class TrainInWM(StateDictMixin):
             if dist.is_initialized():
                 dist.barrier()
 
-        # # Last collect
-        # if self._rank == 0 and not self._is_static_dataset:
-        #     wandb_log(self.collect_test(final=True), self.epoch)
 
     def train_agent(self) -> Logs:
         self.agent.train()
@@ -288,12 +260,8 @@ class TrainInWM(StateDictMixin):
     def test_agent(self) -> Logs:
         self.agent.eval()
         to_log = []
-        # model_names = ["actor_critic"] # only training the actor critic
-        # for name in model_names:
-        #     cfg = getattr(self._cfg, name).training
-        #     if self.epoch > cfg.start_after_epochs:
         to_log += self.eval_ac_in_real()
-        # to_log += self.eval_ac_in_wm()
+
         return to_log
 
     def train_component(self, name: str, steps: int) -> Logs:
@@ -365,8 +333,6 @@ class TrainInWM(StateDictMixin):
         hx = torch.zeros(batch_size, self.agent.actor_critic.lstm_dim, device=self._device)
         cx = torch.zeros(batch_size, self.agent.actor_critic.lstm_dim, device=self._device)
 
-        step_count = 1  # For logging steps
-
         for i in trange(num_episodes, desc=f"Evaluating actor-critic"):
             if not done:
                 out = self.agent.actor_critic.predict_act_value(obs, (hx, cx))
@@ -390,11 +356,6 @@ class TrainInWM(StateDictMixin):
                     "actor_critic/eval/policy_entropy": entropies.item() / math.log(2),
                     "actor_critic/eval/mean_action_distribution": wandb.Histogram(probs.mean(dim=0).numpy()), # ACtually probs.mean is the same as probs at dim 0
                 })
-
-                # for i, d in enumerate(done):
-                #     if d:
-                #         hx[i] = 0
-                #         cx[i] = 0
 
         # Final summary stats
         mean_return = sum(episode_rewards[:num_episodes]) / num_episodes
@@ -425,7 +386,5 @@ class TrainInWM(StateDictMixin):
     def save_checkpoint(self) -> None:
         if self._rank == 0:
             save_with_backup(self.state_dict(), self._path_state_ckpt)
-            # self.train_dataset.save_to_default_path()
-            # self.test_dataset.save_to_default_path()
             self._keep_agent_copies(self.agent.state_dict(), self.epoch)
             self._save_info_for_import_script(self.epoch)

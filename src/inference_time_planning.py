@@ -179,12 +179,13 @@ class WMInference(StateDictMixin):
         wandb.define_metric("unplanned_obs_sequence", step_metric="eval_step")
         wandb.define_metric("obs_sequence", step_metric="eval_step")
         wandb.define_metric("wm_obs_sequence", step_metric="eval_step")
+        wandb.define_metric("meta_planning_depth", step_metric="eval_step")
 
         # Evaluation
-        # start_time = time.time()
-        # self.eval_plain()
-        # if self._rank == 0:
-        #     wandb.log({"duration_plain": (time.time() - start_time)})
+        start_time = time.time()
+        self.eval_plain()
+        if self._rank == 0:
+            wandb.log({"duration_plain": (time.time() - start_time)})
 
         # Same env with WM planning
         start_time = time.time()
@@ -336,11 +337,12 @@ class WMInference(StateDictMixin):
 
         step = 0
         planning_flag = 0
+        plan_count = 0
         for i in trange(num_episodes, desc="Evaluating actor-critic with planning"):
             if not done:
                 logits, value, (self.agent.hx, self.agent.cx) = self.agent.actor_critic.predict_act_value(obs, (self.agent.hx, self.agent.cx))
                 dist = Categorical(logits=logits)
-                actions = dist.sample() # Not deterministic # .probs.argmax(dim=-1)
+                actions = dist.sample()
                 probs = dist.probs.detach().cpu()
                 entropy = dist.entropy().detach().cpu().item() / math.log(2)
 
@@ -348,6 +350,7 @@ class WMInference(StateDictMixin):
 
                 if use_real_step:
                     planning_flag = 0
+                    depth = 0
                     obs, rewards, terminated, truncated, infos = env.step(actions)
                     done = terminated | truncated
                     episode_rewards.append(rewards)
@@ -374,11 +377,10 @@ class WMInference(StateDictMixin):
                     # Cannot step() with every action as this will update the buffers.
                     # Copy some of the WM step() code and use it to predict obs and rewards
                     planning_flag = 100
+                    plan_count += 1
 
-                    best_action, candidate_actions, action_predicted_rews, wm_predicted_obs = multistep_planning(self.agent, world_model_env,
-                                                                       self.env.num_actions, self._cfg.evaluation.planning_steps, 
-                                                                       self._cfg.actor_critic.actor_critic_loss.gamma,
-                                                                       mode=self._cfg.evaluation.planning_mode)
+                    plan = multistep_planning(self.agent, world_model_env, self.env.num_actions, self._cfg)
+                    best_action, candidate_actions, action_predicted_rews, wm_predicted_obs, entropy, depth = plan
 
                     obs, rewards, terminated, truncated, infos = env.step(best_action)
                     done = terminated | truncated
@@ -395,12 +397,14 @@ class WMInference(StateDictMixin):
                     rew_model_reward = Categorical(logits=test_sanity_rew).sample().squeeze(1) - 1.0
                     world_model_env.obs_buffer = world_model_env.obs_buffer.roll(-1, dims=1)
                     world_model_env.act_buffer = world_model_env.act_buffer.roll(-1, dims=1)
-                    world_model_env.obs_buffer[:, -1] = obs # Changed from obs to predicted_obs to test
+                    world_model_env.obs_buffer[:, -1] = obs
 
                     episode_rewards.append(rewards)
+                    entropies.append(entropy)
+
+                    ###############################################
 
                     # Constants
-                    frame_height, frame_width = 64, 64
                     font = ImageFont.load_default()
 
                     # Convert and annotate each frame
@@ -495,6 +499,7 @@ class WMInference(StateDictMixin):
                     "actor_critic/eval/planned_entropy": entropy,
                     "obs_sequence": wandb.Image(Image.fromarray(grid)),           # from real obs
                     "wm_obs_sequence": wandb.Image(Image.fromarray(wm_grid)),     # from world model buffer
+                    "meta_planning_depth": depth,
                 })
 
                 step += 1
@@ -513,7 +518,8 @@ class WMInference(StateDictMixin):
             "actor_critic/eval/planned_entropy_mean": mean_entropy,
             "actor_critic/eval/planned_entropy_std": std_entropy,
             "actor_critic/eval/planned_td_error_mean": mean_td_error,
-            "actor_critic/eval/planned_td_error_std": std_td_error
+            "actor_critic/eval/planned_td_error_std": std_td_error,
+            "actor_critic/eval/num_planning_steps": plan_count
         })
 
         return None
