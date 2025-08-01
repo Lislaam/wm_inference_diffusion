@@ -1,6 +1,7 @@
 # Custom
 wandb
 .vscode
+.venv
 outputs
 results/figures
 slurm*

@@ -182,10 +182,10 @@ class WMInference(StateDictMixin):
         wandb.define_metric("meta_planning_depth", step_metric="eval_step")
 
         # Evaluation
-        start_time = time.time()
-        self.eval_plain()
-        if self._rank == 0:
-            wandb.log({"duration_plain": (time.time() - start_time)})
+        # start_time = time.time()
+        # self.eval_plain()
+        # if self._rank == 0:
+        #     wandb.log({"duration_plain": (time.time() - start_time)})
 
         # Same env with WM planning
         start_time = time.time()
