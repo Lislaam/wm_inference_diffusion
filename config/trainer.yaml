@@ -65,8 +65,8 @@ evaluation:
   every: 10
   planning_steps: 5
   entropy_threshold: 2
-  inner_planning_steps: 1 # Number of steps to plan in the inner (meta-planning) loop
-  planning_depth: 3 # Maximum depth of the planning tree
+  inner_planning_steps: 0 # Number of steps to plan in the inner (meta-planning) loop
+  planning_depth: 0 # Maximum depth of the planning tree
   planning_mode: value # reward, value, or td
 
 world_model_env:
