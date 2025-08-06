@@ -180,6 +180,7 @@ class WMInference(StateDictMixin):
         wandb.define_metric("obs_sequence", step_metric="eval_step")
         wandb.define_metric("wm_obs_sequence", step_metric="eval_step")
         wandb.define_metric("meta_planning_depth", step_metric="eval_step")
+        wandb.define_metric("step_time", step_metric="eval_step")
 
         # Evaluation
         # start_time = time.time()
@@ -340,6 +341,7 @@ class WMInference(StateDictMixin):
         plan_count = 0
         for i in trange(num_episodes, desc="Evaluating actor-critic with planning"):
             if not done:
+                start_time = time.time()
                 logits, value, (self.agent.hx, self.agent.cx) = self.agent.actor_critic.predict_act_value(obs, (self.agent.hx, self.agent.cx))
                 dist = Categorical(logits=logits)
                 actions = dist.sample()
@@ -372,7 +374,7 @@ class WMInference(StateDictMixin):
                     entropies.append(entropy)
                     all_probs.append(probs)
 
-                else: # Planning step
+                else: # Planning step 
                     # Now we test out every action inside the world model and select the best one
                     # Cannot step() with every action as this will update the buffers.
                     # Copy some of the WM step() code and use it to predict obs and rewards
@@ -500,6 +502,7 @@ class WMInference(StateDictMixin):
                     "obs_sequence": wandb.Image(Image.fromarray(grid)),           # from real obs
                     "wm_obs_sequence": wandb.Image(Image.fromarray(wm_grid)),     # from world model buffer
                     "meta_planning_depth": depth,
+                    "step_time": time.time() - start_time
                 })
 
                 step += 1
