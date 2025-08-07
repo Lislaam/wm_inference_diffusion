@@ -34,68 +34,75 @@ def multistep_planning(agent, world_model_env, num_actions, cfg) -> torch.Tensor
     hx_base = agent.hx.clone()
     cx_base = agent.cx.clone()
     
-    for a in range(num_actions):
-        # Propose an action a, and estimate rollout reward in imagination using real actor-critic
-        # Following WM step() logic but not updating buffers and hiddens
-        # Copy buffers to avoid modifying the original ones
+    max_depth = 0 # Using this to prune out high-entropy actions that go too deep and waste time
+    while candidate_actions == []:
+        for a in range(num_actions):
+            # Propose an action a, and estimate rollout reward in imagination using real actor-critic
+            # Following WM step() logic but not updating buffers and hiddens
+            # Copy buffers to avoid modifying the original ones
 
-        obs_buffer = obs_buffer_base.clone()
-        act_buffer = act_buffer_base.clone()
-        wm_hx = wm_hx_base.clone()
-        wm_cx = wm_cx_base.clone()
-        agent_hx = hx_base.clone()
-        agent_cx = cx_base.clone()
+            obs_buffer = obs_buffer_base.clone()
+            act_buffer = act_buffer_base.clone()
+            wm_hx = wm_hx_base.clone()
+            wm_cx = wm_cx_base.clone()
+            agent_hx = hx_base.clone()
+            agent_cx = cx_base.clone()
 
-        act_buffer[:, -1] = a  # candidate action
+            act_buffer[:, -1] = a  # candidate action
 
-        for i in range(cfg.evaluation.planning_steps):
-            rews = [] # Store rewards for multiple samples
-            next_obs, _ = world_model_env.sampler.sample(obs_buffer, act_buffer)
-            logits_rew, _, (wm_hx, wm_cx) = world_model_env.rew_end_model.predict_rew_end(
-                obs_buffer[:, -1:], act_buffer[:, -1:], next_obs.unsqueeze(1),
-                (wm_hx, wm_cx)
-            )
-            for _ in range (10):  # Sample multiple times to get a good estimate
-                rews.append((Categorical(logits=logits_rew).sample().squeeze(1) - 1.0).item())
-                    # in {-1, 0, 1}
+            for i in range(cfg.evaluation.planning_steps):
+                rews = [] # Store rewards for multiple samples
+                next_obs, _ = world_model_env.sampler.sample(obs_buffer, act_buffer)
+                logits_rew, _, (wm_hx, wm_cx) = world_model_env.rew_end_model.predict_rew_end(
+                    obs_buffer[:, -1:], act_buffer[:, -1:], next_obs.unsqueeze(1),
+                    (wm_hx, wm_cx)
+                )
+                for _ in range (10):  # Sample multiple times to get a good estimate
+                    rews.append((Categorical(logits=logits_rew).sample().squeeze(1) - 1.0).item())
+                        # in {-1, 0, 1}
 
-            obs_buffer = obs_buffer.roll(-1, dims=1)
-            act_buffer = act_buffer.roll(-1, dims=1)
-            obs_buffer[:, -1] = next_obs  # predicted next obs
+                obs_buffer = obs_buffer.roll(-1, dims=1)
+                act_buffer = act_buffer.roll(-1, dims=1)
+                obs_buffer[:, -1] = next_obs  # predicted next obs
 
-            # Get actor-critic to choose next action
-            logits, value, (agent_hx, agent_cx) = agent.actor_critic.predict_act_value(
-                next_obs, (agent_hx, agent_cx) # Squeeze obs to fit
-            )
-            dist = Categorical(logits=logits)
-            entropy = dist.entropy().detach().cpu().item() / math.log(2)
-            latest_entropies[a] = entropy  # Store latest entropy for this action
+                # Get actor-critic to choose next action
+                logits, value, (agent_hx, agent_cx) = agent.actor_critic.predict_act_value(
+                    next_obs, (agent_hx, agent_cx) # Squeeze obs to fit
+                )
+                dist = Categorical(logits=logits)
+                entropy = dist.entropy().detach().cpu().item() / math.log(2)
+                latest_entropies[a] = entropy  # Store latest entropy for this action
 
-            if entropy > cfg.evaluation.entropy_threshold and depths[a] < cfg.evaluation.planning_depth:
-                act_buffer[:, -1], latest_entropies[a], depths[a] = inner_planning(agent, world_model_env, num_actions, obs_buffer, act_buffer,
-                                                            wm_hx.clone(), wm_cx.clone(), agent_hx.clone(), agent_cx.clone(),
-                                                            cfg, depths[a]+1)
-            else:
-                act_buffer[:, -1] = dist.sample() # At the last step this will be reset unused
+                if entropy > cfg.evaluation.entropy_threshold and depths[a] < max_depth and max_depth < cfg.evaluation.planning_depth:
+                    act_buffer[:, -1], latest_entropies[a], depths[a] = inner_planning(agent, world_model_env, num_actions, obs_buffer, act_buffer,
+                                                                wm_hx.clone(), wm_cx.clone(), agent_hx.clone(), agent_cx.clone(),
+                                                                cfg, depths[a]+1)
+                elif entropy > cfg.evaluation.entropy_threshold and max_depth >= cfg.evaluation.planning_depth:
+                    break # Move to the next action if entropy is high but depth limit reached 
+                else: # No high entropy, proceed with sampling, OR high entropy but depth limit reached (avoid infinite loop)
+                    act_buffer[:, -1] = dist.sample() # At the last step this will be reset unused
 
-            # Store predicted obs and rewards etc for logging
-            wm_predicted_obs[a].append(next_obs.squeeze())
-            action_predicted_rews[a, i] = max(rews)
-            action_predicted_values[a, i] = value.detach().cpu().item()
-            if i > 0:  # TD error only makes sense from the second step
-                action_predicted_tds[a, i-1] = (max(rews) + cfg.actor_critic.actor_critic_loss.gamma * value - last_value).abs()
-            
-            last_value = value.detach().cpu().item()
+                # Store predicted obs and rewards etc for logging
+                wm_predicted_obs[a].append(next_obs.squeeze())
+                action_predicted_rews[a, i] = max(rews)
+                action_predicted_values[a, i] = value.detach().cpu().item()
+                if i > 0:  # TD error only makes sense from the second step
+                    action_predicted_tds[a, i-1] = (max(rews) + cfg.actor_critic.actor_critic_loss.gamma * value - last_value).abs()
+                
+                last_value = value.detach().cpu().item()
 
-    if cfg.evaluation.planning_mode == 'reward':
-        best_score = max([np.sum(action_predicted_rews[a,:]) for a in range(num_actions)])
-        candidate_actions = [a for a in range(num_actions) if np.sum(action_predicted_rews[a,:]) == best_score]
-    elif cfg.evaluation.planning_mode == 'value':
-        best_score = max([np.sum(action_predicted_values[a,:]) for a in range(num_actions)])
-        candidate_actions = [a for a in range(num_actions) if np.sum(action_predicted_values[a,:]) == best_score]
-    elif cfg.evaluation.planning_mode == 'td':
-        best_score = min([np.sum(action_predicted_tds[a,:]) for a in range(num_actions)]) # MINIMISE the td error for best action
-        candidate_actions = [a for a in range(num_actions) if np.sum(action_predicted_tds[a,:]) == best_score]
+        if cfg.evaluation.planning_mode == 'reward':
+            best_score = max([np.sum(action_predicted_rews[a,:]) for a in range(num_actions)])
+            candidate_actions = [a for a in range(num_actions) if np.sum(action_predicted_rews[a,:]) == best_score]
+        elif cfg.evaluation.planning_mode == 'value':
+            best_score = max([np.sum(action_predicted_values[a,:]) for a in range(num_actions)])
+            candidate_actions = [a for a in range(num_actions) if np.sum(action_predicted_values[a,:]) == best_score]
+        elif cfg.evaluation.planning_mode == 'td':
+            best_score = min([np.sum(action_predicted_tds[a,:]) for a in range(num_actions)]) # MINIMISE the td error for best action
+            candidate_actions = [a for a in range(num_actions) if np.sum(action_predicted_tds[a,:]) == best_score]
+
+        if len(candidate_actions) == 0:
+            max_depth += 1  # Increase depth limit if no candidate actions found and try again
 
     best_action = torch.tensor([np.random.choice(np.array(candidate_actions))])  # Randomly select one of the best actions
     print(f"Best action selected: {best_action} from {candidate_actions}")
