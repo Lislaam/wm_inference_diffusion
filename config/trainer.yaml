@@ -15,6 +15,7 @@ wandb:
   group: null
   tags: null
   notes: null
+  category: pruned_planning
 
 initialization:
   path_to_ckpt: /home/ucabahg/wm_inference_diffusion/trained_models/Boxing.pt  # if specified, will load the agent from this checkpoint
