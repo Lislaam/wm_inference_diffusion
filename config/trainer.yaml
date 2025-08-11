@@ -13,9 +13,8 @@ wandb:
   entity: null
   name: pruned_${evaluation.planning_steps}_roll_${evaluation.inner_planning_steps}_inner_${evaluation.entropy_threshold}_ent_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}
   group: null
-  tags: null
+  tags: pruned
   notes: null
-  category: null
 
 initialization:
   path_to_ckpt: /home/ucabahg/wm_inference_diffusion/trained_models/Boxing.pt  # if specified, will load the agent from this checkpoint
