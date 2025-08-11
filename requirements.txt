@@ -9,6 +9,7 @@ pillow==10.3.0
 pygame==2.5.2
 torch==2.4.1
 torcheval==0.0.7
+torchaudio==2.4.1
 tqdm==4.66.4
 wandb==0.17.0
 matplotlib
