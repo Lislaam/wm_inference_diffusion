@@ -77,7 +77,7 @@ def multistep_planning(agent, world_model_env, num_actions, cfg) -> torch.Tensor
                     act_buffer[:, -1], latest_entropies[a], depths[a] = inner_planning(agent, world_model_env, num_actions, obs_buffer, act_buffer,
                                                                 wm_hx.clone(), wm_cx.clone(), agent_hx.clone(), agent_cx.clone(),
                                                                 cfg, depths[a]+1)
-                elif entropy > cfg.evaluation.entropy_threshold and max_depth <= cfg.evaluation.planning_depth:
+                elif entropy > cfg.evaluation.entropy_threshold and max_depth >= cfg.evaluation.planning_depth:
                     break # Move to the next action if entropy is high but depth limit reached 
                 elif entropy > cfg.evaluation.entropy_threshold:  # If entropy is high but depth is exceeded
                     print(f"High entropy {entropy} for action {a}, depth {depths[a]}, skipping further planning")
