@@ -11,7 +11,7 @@ wandb:
   mode: online
   project: world_models
   entity: null
-  name: pruned_${evaluation.planning_steps}_roll_${evaluation.inner_planning_steps}_inner_${evaluation.entropy_threshold}_ent_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}
+  name: pruned_${evaluation.planning_steps}_roll_${evaluation.inner_planning_steps}_inner_${evaluation.entropy_threshold}_max_${evaluation.planning_depth}_ent_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}
   group: null
   tags: pruned
   notes: null
@@ -66,7 +66,7 @@ evaluation:
   planning_steps: 5
   entropy_threshold: 2
   inner_planning_steps: 0 # Number of steps to plan in the inner (meta-planning) loop
-  planning_depth: 3 # Maximum depth of the planning tree
+  planning_depth: 10 # Maximum depth of the planning tree
   planning_mode: value # reward, value, or td
 
 world_model_env:
