@@ -79,7 +79,10 @@ def multistep_planning(agent, world_model_env, num_actions, cfg) -> torch.Tensor
                                                                 cfg, depths[a]+1)
                 elif entropy > cfg.evaluation.entropy_threshold and max_depth >= cfg.evaluation.planning_depth:
                     break # Move to the next action if entropy is high but depth limit reached 
-                else: # No high entropy, proceed with sampling, OR high entropy but depth limit reached (avoid infinite loop)
+                elif entropy > cfg.evaluation.entropy_threshold:  # If entropy is high but depth is exceeded
+                    print(f"High entropy {entropy} for action {a}, depth {depths[a]}, skipping further planning")
+                    act_buffer[:, -1] = dist.sample()  # Sample action to avoid infinite loop
+                else: # No high entropy, proceed with sampling
                     act_buffer[:, -1] = dist.sample() # At the last step this will be reset unused
 
                 # Store predicted obs and rewards etc for logging
