@@ -73,7 +73,7 @@ def multistep_planning(agent, world_model_env, num_actions, cfg) -> torch.Tensor
                 entropy = dist.entropy().detach().cpu().item() / math.log(2)
                 latest_entropies[a] = entropy  # Store latest entropy for this action
 
-                if entropy > cfg.evaluation.entropy_threshold and depths[a] < max_depth and max_depth < cfg.evaluation.planning_depth:
+                if entropy > cfg.evaluation.entropy_threshold and depths[a] < max_depth and max_depth < cfg.evaluation.planning_depth and cfg.inner_planning_steps != 0:
                     act_buffer[:, -1], latest_entropies[a], depths[a] = inner_planning(agent, world_model_env, num_actions, obs_buffer, act_buffer,
                                                                 wm_hx.clone(), wm_cx.clone(), agent_hx.clone(), agent_cx.clone(),
                                                                 cfg, depths[a]+1)
@@ -121,9 +121,9 @@ def inner_planning(agent, world_model_env, num_actions, obs_buffer, act_buffer, 
     This avoids overwriting or re-cloning buffers from real env.
     """
     ############ TD MODE IS NOT SUPPORTED YET ############
-    action_predicted_rews = np.zeros((num_actions, cfg.evaluation.planning_steps))
-    action_predicted_values = np.zeros((num_actions, cfg.evaluation.planning_steps))
-    action_predicted_tds = np.zeros((num_actions, cfg.evaluation.planning_steps - 1))
+    action_predicted_rews = np.zeros((num_actions, cfg.evaluation.inner_planning_steps))
+    action_predicted_values = np.zeros((num_actions, cfg.evaluation.inner_planning_steps))
+    action_predicted_tds = np.zeros((num_actions, cfg.evaluation.inner_planning_steps - 1))
     initial_depth = depth # Change this for each action
     latest_entropies = np.zeros(num_actions)  # Store latest entropies for each action
 
@@ -139,7 +139,7 @@ def inner_planning(agent, world_model_env, num_actions, obs_buffer, act_buffer, 
 
         act_buffer[:, -1] = a  # candidate action
 
-        for i in range(cfg.evaluation.planning_steps):
+        for i in range(cfg.evaluation.inner_planning_steps):
             rews = [] # Store rewards for multiple samples
             next_obs, _ = world_model_env.sampler.sample(obs_buf, act_buf)
             logits_rew, _, (wm_hx_a, wm_cx_a) = world_model_env.rew_end_model.predict_rew_end(

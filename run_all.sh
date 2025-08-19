@@ -2,7 +2,7 @@
 
 #$ -l gpu=1
 #$ -ac allow=L
-#$ -l h_rt=48:0:0
+#$ -l h_rt=72:0:0
 #$ -l mem=48G
 
 set -euo pipefail
@@ -31,11 +31,11 @@ handle_failure() {
 }
 
 # Main loop
-for planning_steps in 1 2 5 10 15 20; do
-  for inner_planning_steps in 0 1 2 5; do
-    for entropy_threshold in 1.5 1; do
-      for seed in 0 1 2; do
-        for planning_mode in value reward; do
+for planning_steps in 1; do
+  for inner_planning_steps in 5; do
+    for entropy_threshold in 2; do
+      for seed in 2; do
+        for planning_mode in reward; do
 
           while true; do
             echo "Running with steps=$planning_steps, inner_steps=$inner_planning_steps, ent=$entropy_threshold, mode=$planning_mode, seed=$seed"
@@ -45,7 +45,42 @@ for planning_steps in 1 2 5 10 15 20; do
               evaluation.inner_planning_steps=$inner_planning_steps \
               evaluation.entropy_threshold=$entropy_threshold \
               evaluation.planning_mode=$planning_mode \
-              evaluation.planning_depth=10 \
+              evaluation.planning_depth=3 \
+              common.seed=$seed \
+              wandb.mode=offline; then
+
+              echo "✅ Run completed, syncing latest run..."
+              if ! WANDB_API_KEY=$WANDB_KEY wandb sync "$(find "$OUTPUT_DIR" -type d -name 'offline-run-*' | sort -V | tail -n 1)"; then
+                handle_failure
+                continue
+              fi
+
+              break  # move to next run
+            else
+              handle_failure
+            fi
+          done
+        done
+      done
+    done
+  done
+done
+
+for planning_steps in 10; do
+  for inner_planning_steps in 5; do
+    for entropy_threshold in 1; do
+      for seed in 1; do
+        for planning_mode in value; do
+
+          while true; do
+            echo "Running with steps=$planning_steps, inner_steps=$inner_planning_steps, ent=$entropy_threshold, mode=$planning_mode, seed=$seed"
+
+            if python src/main.py \
+              evaluation.planning_steps=$planning_steps \
+              evaluation.inner_planning_steps=$inner_planning_steps \
+              evaluation.entropy_threshold=$entropy_threshold \
+              evaluation.planning_mode=$planning_mode \
+              evaluation.planning_depth=3 \
               common.seed=$seed \
               wandb.mode=offline; then
 
