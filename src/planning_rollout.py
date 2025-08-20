@@ -120,8 +120,17 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
 
         # If all rollouts failed, increase depth and retry
         if not any(rollout_valids):
-            max_depth += 1
-            continue
+            if max_depth >= cfg.evaluation.planning_depth:
+                # Fallback: pick lowest-entropy action
+                entropies = {a: latest_entropies[a] for a in range(num_actions)}
+                best_action = torch.tensor([min(entropies, key=entropies.get)])
+                print(f"⚠️ All rollouts failed at max depth. "
+                    f"Falling back to lowest-entropy action {best_action.item()} "
+                    f"(entropy={entropies[best_action.item()]:.3f})")
+                return best_action  # or break out of loop safely
+            else:
+                max_depth += 1
+                continue
 
         # Select candidate actions among valid rollouts
         valid_idxs = [a for a, ok in enumerate(rollout_valids) if ok]
