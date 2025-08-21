@@ -81,13 +81,18 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
 
                 if entropy > cfg.evaluation.entropy_threshold:
                     if can_inner:
-                        act_buffer[:, -1], latest_entropies[a], depths[a] = inner_planning(
+                        inner_update = inner_planning(
                             agent, world_model_env, num_actions,
                             obs_buffer, act_buffer,
                             wm_hx.clone(), wm_cx.clone(),
                             agent_hx.clone(), agent_cx.clone(),
                             cfg, depths[a]+1
                         )
+                        if inner_update[1] < cfg.evaluation.entropy_threshold:
+                            act_buffer[:, -1], latest_entropies[a], depths[a] = inner_update
+                        else: # Inner selection action was too high entropy
+                            rollout_valid = False
+                            break
                     else:
                         rollout_valid = False
                         break
@@ -210,7 +215,7 @@ def inner_planning(agent, world_model_env, num_actions, obs_buffer, act_buffer, 
                 act_buf[:, -1], latest_entropies[a], depth = inner_planning(agent, world_model_env, num_actions, obs_buf, act_buf, 
                                                         wm_hx_a.clone(), wm_cx_a.clone(), agent_hx_a.clone(), agent_cx_a.clone(), cfg, depth + 1)
             else:
-                act_buf[:, -1] = dist.sample()
+                act_buf[:, -1] = dist.sample() # If this is too large entropy, main fn will probably discard action anyway
 
             action_predicted_rews[a, i] = max(rews)
             action_predicted_values[a, i] = value.detach().cpu().item()
