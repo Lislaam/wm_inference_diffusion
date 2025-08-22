@@ -86,7 +86,7 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
                             obs_buffer, act_buffer,
                             wm_hx.clone(), wm_cx.clone(),
                             agent_hx.clone(), agent_cx.clone(),
-                            cfg, depths[a]+1
+                            cfg, depths[a]+1, max_depth=max_depth
                         )
                         if inner_update[1] < cfg.evaluation.entropy_threshold:
                             act_buffer[:, -1], latest_entropies[a], depths[a] = inner_update
@@ -163,7 +163,7 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
 
 
 def inner_planning(agent, world_model_env, num_actions, obs_buffer, act_buffer, wm_hx, wm_cx, agent_hx, agent_cx,
-                   cfg, depth):
+                   cfg, depth, max_depth):
     """
     Perform planning *within* a rollout when entropy is high.
     Returns the selected next action based on imagination from current buffer state.
@@ -211,9 +211,9 @@ def inner_planning(agent, world_model_env, num_actions, obs_buffer, act_buffer, 
             entropy = dist.entropy().detach().cpu().item() / math.log(2)
             latest_entropies[a] = entropy  # Store latest entropy for this action
 
-            if entropy > cfg.evaluation.entropy_threshold and depth < cfg.evaluation.planning_depth:
+            if entropy > cfg.evaluation.entropy_threshold and depth < max_depth:
                 act_buf[:, -1], latest_entropies[a], depth = inner_planning(agent, world_model_env, num_actions, obs_buf, act_buf, 
-                                                        wm_hx_a.clone(), wm_cx_a.clone(), agent_hx_a.clone(), agent_cx_a.clone(), cfg, depth + 1)
+                                                        wm_hx_a.clone(), wm_cx_a.clone(), agent_hx_a.clone(), agent_cx_a.clone(), cfg, depth + 1, max_depth=max_depth)
             else:
                 act_buf[:, -1] = dist.sample() # If this is too large entropy, main fn will probably discard action anyway
 
