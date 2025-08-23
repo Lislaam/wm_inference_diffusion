@@ -5,19 +5,6 @@ import torch
 from torch.distributions.categorical import Categorical
 
 
-def _expected_reward_from_logits(logits_rew: torch.Tensor) -> float:
-    """
-    Your sampling did: Categorical(logits).sample() in {0,1,2} then -1 => {-1,0,1}.
-    Compute E[reward] analytically to avoid 10 samples/step.
-    """
-    # probs shape: [B, 3] or [3]; allow either
-    probs = torch.softmax(logits_rew, dim=-1)
-    classes = torch.tensor([-1.0, 0.0, 1.0], device=probs.device, dtype=probs.dtype)
-    exp_rew = (probs * classes).sum(dim=-1)
-    # If batched, average; if scalar, return scalar
-    return float(exp_rew.mean().item())
-
-
 def multistep_planning(agent, world_model_env, num_actions, cfg):
     """
     Perform multistep planning using the world model environment.
@@ -63,65 +50,64 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
             last_value = 0.0
 
             for i in range(cfg.evaluation.planning_steps):
-                # 1) next obs
+                rews = []
+
+                # Sample next obs
                 next_obs, _ = world_model_env.sampler.sample(obs_buffer, act_buffer)
+
+                # Reward-end model
                 logits_rew, _, (wm_hx, wm_cx) = world_model_env.rew_end_model.predict_rew_end(
                     obs_buffer[:, -1:], act_buffer[:, -1:], next_obs.unsqueeze(1), (wm_hx, wm_cx)
                 )
+                for _ in range(10):
+                    rews.append((Categorical(logits=logits_rew).sample().squeeze(1) - 1.0).item())
 
-                # FAST expected reward (instead of 10 samples)
-                exp_rew = _expected_reward_from_logits(logits_rew)
-
-                # roll buffers
+                # Roll buffers
                 obs_buffer = obs_buffer.roll(-1, dims=1)
                 act_buffer = act_buffer.roll(-1, dims=1)
                 obs_buffer[:, -1] = next_obs
 
-                # 2) policy/value
+                # Actor-critic
                 logits, value, (agent_hx, agent_cx) = agent.actor_critic.predict_act_value(next_obs, (agent_hx, agent_cx))
                 dist = Categorical(logits=logits)
                 entropy = dist.entropy().detach().cpu().item() / math.log(2)
                 latest_entropies[a] = entropy
 
-                remaining_steps = cfg.evaluation.planning_steps - (i + 1)
-                can_inner = (
+                need_inner = (
                     cfg.evaluation.inner_planning_steps != 0 and
                     depths[a] < max_depth and
-                    max_depth < cfg.evaluation.planning_depth and
-                    remaining_steps > 0  # only inner-plan if there's horizon left
+                    max_depth < cfg.evaluation.planning_depth
                 )
 
                 if entropy > cfg.evaluation.entropy_threshold:
-                    if can_inner:
-                        act_sel, ent_sel, new_depth = inner_planning(
+                    if need_inner:
+                        inner_update = inner_planning(
                             agent, world_model_env, num_actions,
                             obs_buffer, act_buffer,
                             wm_hx.clone(), wm_cx.clone(),
                             agent_hx.clone(), agent_cx.clone(),
-                            cfg, depths[a] + 1, max_depth=max_depth,
-                            remaining_steps=remaining_steps
+                            cfg, depths[a]+1, max_depth=max_depth,
+                            remaining_steps=cfg.evaluation.planning_steps - i - 1
                         )
-                        # if even the inner plan can’t get below threshold, abort this action
-                        if ent_sel >= cfg.evaluation.entropy_threshold:
+                        if inner_update[1] < cfg.evaluation.entropy_threshold:
+                            act_buffer[:, -1], latest_entropies[a], depths[a] = inner_update
+                        else: # Inner selection action was too high entropy
                             rollout_valid = False
                             break
-                        act_buffer[:, -1] = act_sel  # OK to adopt inner-selected action
-                        depths[a] = new_depth
-                        latest_entropies[a] = ent_sel
                     else:
-                        # No useful inner-planning possible (no horizon left or depth budget) ⇒ abort
                         rollout_valid = False
                         break
                 else:
                     act_buffer[:, -1] = dist.sample()
 
-                # --- logging ---
+                # Logging
                 wm_predicted_obs[a].append(next_obs.squeeze())
-                action_predicted_rews[a, i] = exp_rew
-                action_predicted_values[a, i] = float(value.detach().cpu().item())
+                action_predicted_rews[a, i] = max(rews)
+                action_predicted_values[a, i] = value.detach().cpu().item()
                 if i > 0:
-                    td = (exp_rew + cfg.actor_critic.actor_critic_loss.gamma * value - last_value).abs()
-                    action_predicted_tds[a, i-1] = float(td.detach().cpu().item() if torch.is_tensor(td) else td)
+                    action_predicted_tds[a, i-1] = (
+                        max(rews) + cfg.actor_critic.actor_critic_loss.gamma * value - last_value
+                    ).abs()
                 last_value = value.detach().cpu().item()
                 collected += 1
 
@@ -177,147 +163,76 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
             depths[best_action.item()])
 
 
-@torch.inference_mode()
-def inner_planning(agent, world_model_env, num_actions,
-                   obs_buffer, act_buffer, wm_hx, wm_cx, agent_hx, agent_cx,
-                   cfg, depth, max_depth, remaining_steps=None):
+def inner_planning(agent, world_model_env, num_actions, obs_buffer, act_buffer, wm_hx, wm_cx, agent_hx, agent_cx,
+                   cfg, depth, max_depth, remaining_steps):
     """
-    Pruned inner planning. Only useful if there is remaining horizon.
-    Returns: (chosen_action_tensor, latest_entropy_for_chosen, new_depth)
+    Perform planning *within* a rollout when entropy is high.
+    Returns the selected next action based on imagination from current buffer state.
+    This avoids overwriting or re-cloning buffers from real env.
     """
-    assert cfg.evaluation.planning_mode in ['reward', 'value', 'td']
+    ############ TD MODE IS NOT SUPPORTED YET ############
+    action_predicted_rews = np.zeros((num_actions, cfg.evaluation.inner_planning_steps))
+    action_predicted_values = np.zeros((num_actions, cfg.evaluation.inner_planning_steps))
+    action_predicted_tds = np.zeros((num_actions, cfg.evaluation.inner_planning_steps - 1))
+    initial_depth = depth # Change this for each action
+    latest_entropies = np.zeros(num_actions)  # Store latest entropies for each action
 
-    # If caller doesn't pass remaining_steps, assume full inner horizon but cap by outer remainder.
-    if remaining_steps is None:
-        remaining_steps = cfg.evaluation.inner_planning_steps
-    inner_steps_eff = min(cfg.evaluation.inner_planning_steps, max(0, int(remaining_steps)))
+    for a in range(num_actions):
+        # Clone buffers at current internal planning point
+        obs_buf = obs_buffer.clone()
+        act_buf = act_buffer.clone()
+        wm_hx_a = wm_hx.clone()
+        wm_cx_a = wm_cx.clone()
+        agent_hx_a = agent_hx.clone()
+        agent_cx_a = agent_cx.clone()
+        depth = initial_depth  # Reset depth for each action
 
-    # If no horizon left, don't expand — report high entropy so caller treats as invalid.
-    if inner_steps_eff <= 0 or depth >= cfg.evaluation.planning_depth:
-        # Return a no-op action with very high entropy to signal "invalid"
-        return torch.tensor([0], device=act_buffer.device), float('inf'), depth
+        act_buffer[:, -1] = a  # candidate action
 
-    # Pre-alloc (small) for inner horizon
-    min_steps = max(inner_steps_eff, 2)
-    action_predicted_rews = np.zeros((num_actions, min_steps), dtype=np.float32)
-    action_predicted_values = np.zeros((num_actions, min_steps), dtype=np.float32)
-    action_predicted_tds = np.zeros((num_actions, min_steps - 1), dtype=np.float32)
-    latest_entropies = np.zeros(num_actions, dtype=np.float32)
+        for i in range(remaining_steps):
+            rews = [] # Store rewards for multiple samples
+            next_obs, _ = world_model_env.sampler.sample(obs_buf, act_buf)
+            logits_rew, _, (wm_hx_a, wm_cx_a) = world_model_env.rew_end_model.predict_rew_end(
+                obs_buf[:, -1:], act_buf[:, -1:], next_obs.unsqueeze(1),
+                (wm_hx_a, wm_cx_a)
+            )
+            for _ in range (10):  # Sample multiple times to get a good estimate
+                rews.append((Categorical(logits=logits_rew).sample().squeeze(1) - 1.0).item())
+                    # in {-1, 0, 1}
 
-    local_max_depth = depth
-    candidate_actions = []
+            obs_buf = obs_buf.roll(-1, dims=1)
+            act_buf = act_buf.roll(-1, dims=1)
+            obs_buf[:, -1] = next_obs  # predicted next obs
 
-    while not candidate_actions:
-        rollout_valids = [False] * num_actions
+            # Get actor-critic to choose next action
+            logits, value, (agent_hx_a, agent_cx_a) = agent.actor_critic.predict_act_value(
+                next_obs, (agent_hx_a, agent_cx_a) # Squeeze obs to fit
+            )
+            dist = Categorical(logits=logits)
+            entropy = dist.entropy().detach().cpu().item() / math.log(2)
+            latest_entropies[a] = entropy  # Store latest entropy for this action
 
-        for a in range(num_actions):
-            # local clones
-            obs_buf = obs_buffer.clone()
-            act_buf = act_buffer.clone()
-            wm_hx_a, wm_cx_a = wm_hx.clone(), wm_cx.clone()
-            agent_hx_a, agent_cx_a = agent_hx.clone(), agent_cx.clone()
-            act_buf[:, -1] = a
+            if entropy > cfg.evaluation.entropy_threshold and depth < max_depth and remaining_steps - i - 1 > 0:
+                act_buf[:, -1], latest_entropies[a], depth = inner_planning(agent, world_model_env, num_actions, obs_buf, act_buf, 
+                                                        wm_hx_a.clone(), wm_cx_a.clone(), agent_hx_a.clone(), agent_cx_a.clone(), 
+                                                        cfg, depth + 1, max_depth=max_depth, 
+                                                        remaining_steps=remaining_steps - i - 1)
+            else:
+                act_buf[:, -1] = dist.sample() # If this is too large entropy, main fn will probably discard action anyway
 
-            collected = 0
-            rollout_valid = True
-            last_value = 0.0
+            action_predicted_rews[a, i] = max(rews)
+            action_predicted_values[a, i] = value.detach().cpu().item()
 
-            for i in range(inner_steps_eff):
-                # 1) next obs
-                next_obs, _ = world_model_env.sampler.sample(obs_buf, act_buf)
-                logits_rew, _, (wm_hx_a, wm_cx_a) = world_model_env.rew_end_model.predict_rew_end(
-                    obs_buf[:, -1:], act_buf[:, -1:], next_obs.unsqueeze(1), (wm_hx_a, wm_cx_a)
-                )
+    if cfg.evaluation.planning_mode == 'reward':
+        best_score = max([np.sum(action_predicted_rews[a, :]) for a in range(num_actions)])
+        candidate_actions = [a for a in range(num_actions) if np.sum(action_predicted_rews[a, :]) == best_score]
+    elif cfg.evaluation.planning_mode == 'value':
+        best_score = max([np.sum(action_predicted_values[a, :]) for a in range(num_actions)])
+        candidate_actions = [a for a in range(num_actions) if np.sum(action_predicted_values[a, :]) == best_score]
+    elif cfg.evaluation.planning_mode == 'td':
+        best_score = min([np.sum(action_predicted_tds[a, :]) for a in range(num_actions)])
+        candidate_actions = [a for a in range(num_actions) if np.sum(action_predicted_tds[a, :]) == best_score]
 
-                # === FAST: expected reward instead of 10x sampling ===
-                exp_rew = _expected_reward_from_logits(logits_rew)
-                # If you insist on sampling, replace the line above with:
-                # exp_rew = np.mean([(Categorical(logits=logits_rew).sample().squeeze(1).item() - 1.0) for _ in range(10)])
+    best_action = torch.tensor([np.random.choice(np.array(candidate_actions))])  # Randomly select one of the best actions
 
-                # slide local buffers
-                obs_buf = obs_buf.roll(-1, dims=1)
-                act_buf = act_buf.roll(-1, dims=1)
-                obs_buf[:, -1] = next_obs
-
-                # 2) policy/value
-                logits, value, (agent_hx_a, agent_cx_a) = agent.actor_critic.predict_act_value(next_obs, (agent_hx_a, agent_cx_a))
-                dist = Categorical(logits=logits)
-                entropy = dist.entropy().detach().cpu().item() / math.log(2)
-                latest_entropies[a] = entropy
-
-                # Can we go deeper from here?
-                can_recurse = (local_max_depth < max_depth) and (local_max_depth < cfg.evaluation.planning_depth) \
-                              and (i < inner_steps_eff - 1)  # only recurse if there is further horizon
-
-                if entropy > cfg.evaluation.entropy_threshold:
-                    if can_recurse:
-                        # recurse with horizon reduced by the step we've just taken
-                        sub_action, sub_ent, new_depth = inner_planning(
-                            agent, world_model_env, num_actions,
-                            obs_buf.clone(), act_buf.clone(),
-                            wm_hx_a.clone(), wm_cx_a.clone(),
-                            agent_hx_a.clone(), agent_cx_a.clone(),
-                            cfg, local_max_depth + 1, max_depth,
-                            remaining_steps=inner_steps_eff - (i + 1)
-                        )
-                        latest_entropies[a] = float(sub_ent)
-                        # Treat this branch as completed (we used recursion to resolve)
-                        action_predicted_rews[a, i] = exp_rew
-                        action_predicted_values[a, i] = float(value.detach().cpu().item())
-                        if i > 0:
-                            td = (exp_rew + cfg.actor_critic.actor_critic_loss.gamma * value - last_value).abs()
-                            action_predicted_tds[a, i-1] = float(td.detach().cpu().item() if torch.is_tensor(td) else td)
-                        collected += 1
-                        rollout_valid = (sub_ent < cfg.evaluation.entropy_threshold)
-                        break
-                    else:
-                        # Depth constraint prevents recursion (or no horizon left) — abort
-                        rollout_valid = False
-                        break
-                else:
-                    act_buf[:, -1] = dist.sample()
-
-                # logging this step
-                action_predicted_rews[a, i] = exp_rew
-                action_predicted_values[a, i] = float(value.detach().cpu().item())
-                if i > 0:
-                    td = (exp_rew + cfg.actor_critic.actor_critic_loss.gamma * value - last_value).abs()
-                    action_predicted_tds[a, i-1] = float(td.detach().cpu().item() if torch.is_tensor(td) else td)
-                last_value = value.detach().cpu().item()
-                collected += 1
-
-            rollout_valids[a] = rollout_valid
-
-            # pad remaining (small inner arrays)
-            if collected < min_steps:
-                action_predicted_rews[a, collected:] = 0.0
-                action_predicted_values[a, collected:] = 0.0
-                if collected < (min_steps - 1):
-                    action_predicted_tds[a, collected:] = 0.0
-
-        # If all invalid at this local depth, try to open depth a bit (but not above global limits)
-        if not any(rollout_valids):
-            if local_max_depth >= max_depth or local_max_depth >= cfg.evaluation.planning_depth:
-                # fallback: lowest-entropy action
-                chosen = int(np.argmin(latest_entropies))
-                return torch.tensor([chosen], device=act_buffer.device), float(latest_entropies[chosen]), local_max_depth
-            local_max_depth += 1
-            continue
-
-        # choose among valid only
-        valid = [i for i, ok in enumerate(rollout_valids) if ok]
-        if cfg.evaluation.planning_mode == 'reward':
-            vals = {a: float(action_predicted_rews[a, :].sum()) for a in valid}
-            best = max(vals.values())
-            candidate_actions = [a for a, s in vals.items() if s == best]
-        elif cfg.evaluation.planning_mode == 'value':
-            vals = {a: float(action_predicted_values[a, :].sum()) for a in valid}
-            best = max(vals.values())
-            candidate_actions = [a for a, s in vals.items() if s == best]
-        else:  # 'td'
-            vals = {a: float(action_predicted_tds[a, :].sum()) for a in valid}
-            best = min(vals.values())
-            candidate_actions = [a for a, s in vals.items() if s == best]
-
-    chosen = int(np.random.choice(np.array(candidate_actions)))
-    return torch.tensor([chosen], device=act_buffer.device), float(latest_entropies[chosen]), local_max_depth
+    return torch.tensor([np.random.choice(np.array(candidate_actions))]), latest_entropies[best_action.item()], depth
