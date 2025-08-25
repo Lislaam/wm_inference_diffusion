@@ -35,6 +35,12 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
     candidate_actions = []
 
     while not candidate_actions:
+        # --- reset per-attempt logging so failed attempts don't accumulate entries ---
+        action_predicted_rews.fill(0)
+        action_predicted_values.fill(0)
+        action_predicted_tds.fill(0)
+        wm_predicted_obs = [[] for _ in range(num_actions)]
+
         rollout_valids = [False] * num_actions
 
         for a in range(num_actions):
