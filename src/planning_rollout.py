@@ -177,9 +177,11 @@ def inner_planning(agent, world_model_env, num_actions, obs_buffer, act_buffer, 
     This avoids overwriting or re-cloning buffers from real env.
     """
     ############ TD MODE IS NOT SUPPORTED YET ############
-    action_predicted_rews = np.zeros((num_actions, cfg.evaluation.inner_planning_steps))
-    action_predicted_values = np.zeros((num_actions, cfg.evaluation.inner_planning_steps))
-    action_predicted_tds = np.zeros((num_actions, cfg.evaluation.inner_planning_steps - 1))
+    horizon = remaining_steps if remaining_steps > 0 else 1  # always at least 1 step
+
+    action_predicted_rews = np.zeros((num_actions, horizon))
+    action_predicted_values = np.zeros((num_actions, horizon))
+    action_predicted_tds = np.zeros((num_actions, max(horizon - 1, 1)))
     initial_depth = depth # Change this for each action
     latest_entropies = np.zeros(num_actions)  # Store latest entropies for each action
 
@@ -193,7 +195,7 @@ def inner_planning(agent, world_model_env, num_actions, obs_buffer, act_buffer, 
         agent_cx_a = agent_cx.clone()
         depth = initial_depth  # Reset depth for each action
 
-        act_buffer[:, -1] = a  # candidate action
+        act_buf[:, -1] = a  # candidate action
 
         for i in range(remaining_steps):
             rews = [] # Store rewards for multiple samples
