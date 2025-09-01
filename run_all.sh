@@ -13,6 +13,7 @@ conda activate .venv
 cd wm_inference_diffusion
 
 export WANDB_MODE=offline
+export WANDB_START_METHOD=fork
 OUTPUT_DIR="/myriadfs/home/ucabahg/wm_inference_diffusion/outputs"
 WANDB_KEY="8e782a594dad15c64868ccff129984a8a344af28"
 
@@ -22,7 +23,7 @@ handle_failure() {
     WANDB_API_KEY=$WANDB_KEY wandb sync "$(find "$OUTPUT_DIR" -type d -name 'offline-run-*' | sort -V)" || echo "Sync failed"
 
     echo "Killing leftover W&B processes..."
-    ps -u "$USER" -o pid,cmd | grep "[w]andb" | awk '{print $1}' | xargs -r kill -9 || true
+    pkill -9 -u "$USER" wandb || true
 
     echo "Clearing output directory..."
     rm -rf "$OUTPUT_DIR"
@@ -30,76 +31,94 @@ handle_failure() {
     echo "Retrying run..."
 }
 
-# Main loop
-for planning_steps in 1; do
-  for inner_planning_steps in 5; do
-    for entropy_threshold in 2; do
-      for seed in 2; do
-        for planning_mode in reward; do
+# Wrapper to run Python safely
+run_experiment() {
+    local args=("$@")
+    while true; do
+        echo "Running experiment: ${args[*]}"
 
-          while true; do
-            echo "Running with steps=$planning_steps, inner_steps=$inner_planning_steps, ent=$entropy_threshold, mode=$planning_mode, seed=$seed"
+        # Ensure clean environment
+        pkill -9 -u "$USER" wandb || true
+        rm -rf "$OUTPUT_DIR"
 
-            if python src/main.py \
-              evaluation.planning_steps=$planning_steps \
-              evaluation.inner_planning_steps=$inner_planning_steps \
-              evaluation.entropy_threshold=$entropy_threshold \
-              evaluation.planning_mode=$planning_mode \
-              evaluation.planning_depth=3 \
-              common.seed=$seed \
-              wandb.mode=offline; then
+        # Run Python and capture exit code
+        set +e
+        python src/main.py "${args[@]}"
+        exit_code=$?
+        set -e
 
-              echo "✅ Run completed, syncing latest run..."
-              if ! WANDB_API_KEY=$WANDB_KEY wandb sync "$(find "$OUTPUT_DIR" -type d -name 'offline-run-*' | sort -V | tail -n 1)"; then
+        if [[ $exit_code -eq 0 ]]; then
+            echo "✅ Run completed, syncing latest run..."
+            if ! WANDB_API_KEY=$WANDB_KEY wandb sync "$(find "$OUTPUT_DIR" -type d -name 'offline-run-*' | sort -V | tail -n 1)"; then
                 handle_failure
                 continue
-              fi
-
-              break  # move to next run
-            else
-              handle_failure
             fi
-          done
-        done
-      done
+            break
+        else
+            handle_failure
+        fi
     done
-  done
-done
+}
 
-for planning_steps in 10; do
-  for inner_planning_steps in 5; do
+# ---------------------------
+# First loop
+# ---------------------------
+for planning_steps in 15; do
+  for inner_planning_steps in 1; do
     for entropy_threshold in 1; do
-      for seed in 1; do
-        for planning_mode in value; do
-
-          while true; do
-            echo "Running with steps=$planning_steps, inner_steps=$inner_planning_steps, ent=$entropy_threshold, mode=$planning_mode, seed=$seed"
-
-            if python src/main.py \
-              evaluation.planning_steps=$planning_steps \
-              evaluation.inner_planning_steps=$inner_planning_steps \
-              evaluation.entropy_threshold=$entropy_threshold \
-              evaluation.planning_mode=$planning_mode \
-              evaluation.planning_depth=3 \
-              common.seed=$seed \
-              wandb.mode=offline; then
-
-              echo "✅ Run completed, syncing latest run..."
-              if ! WANDB_API_KEY=$WANDB_KEY wandb sync "$(find "$OUTPUT_DIR" -type d -name 'offline-run-*' | sort -V | tail -n 1)"; then
-                handle_failure
-                continue
-              fi
-
-              break  # move to next run
-            else
-              handle_failure
-            fi
-          done
+      for planning_mode in value reward; do
+        for seed in 0 1 2; do
+            run_experiment \
+                evaluation.planning_steps=$planning_steps \
+                evaluation.inner_planning_steps=$inner_planning_steps \
+                evaluation.entropy_threshold=$entropy_threshold \
+                evaluation.planning_mode=$planning_mode \
+                evaluation.planning_depth=5 \
+                common.seed=$seed \
+                wandb.mode=offline
         done
       done
     done
   done
 done
 
-# Final sync of all runs at the end
-# WANDB_API_KEY=$WANDB_KEY wandb sync $(find "$OUTPUT_DIR" -type d -name 'offline-run-*' | sort -V)
+# ---------------------------
+# Third loop
+# ---------------------------
+for planning_steps in 15; do
+  for inner_planning_steps in 2 5; do
+    for entropy_threshold in 2 1.5 1; do
+      for planning_mode in value reward; do
+        for seed in 0 1 2; do
+            run_experiment \
+                evaluation.planning_steps=$planning_steps \
+                evaluation.inner_planning_steps=$inner_planning_steps \
+                evaluation.entropy_threshold=$entropy_threshold \
+                evaluation.planning_mode=$planning_mode \
+                evaluation.planning_depth=5 \
+                common.seed=$seed \
+                wandb.mode=offline
+        done
+      done
+    done
+  done
+done
+
+for planning_steps in 20; do
+  for inner_planning_steps in 1 2 5; do
+    for entropy_threshold in 2 1.5 1; do
+      for planning_mode in value reward; do
+        for seed in 0 1 2; do
+            run_experiment \
+                evaluation.planning_steps=$planning_steps \
+                evaluation.inner_planning_steps=$inner_planning_steps \
+                evaluation.entropy_threshold=$entropy_threshold \
+                evaluation.planning_mode=$planning_mode \
+                evaluation.planning_depth=5 \
+                common.seed=$seed \
+                wandb.mode=offline
+        done
+      done
+    done
+  done
+done
