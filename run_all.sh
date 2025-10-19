@@ -63,60 +63,22 @@ run_experiment() {
 # ---------------------------
 # First loop
 # ---------------------------
-for planning_steps in 15; do
-  for inner_planning_steps in 1; do
-    for entropy_threshold in 1; do
-      for planning_mode in value reward; do
-        for seed in 0 1 2; do
-            run_experiment \
-                evaluation.planning_steps=$planning_steps \
-                evaluation.inner_planning_steps=$inner_planning_steps \
-                evaluation.entropy_threshold=$entropy_threshold \
-                evaluation.planning_mode=$planning_mode \
-                evaluation.planning_depth=5 \
-                common.seed=$seed \
-                wandb.mode=offline
-        done
-      done
-    done
-  done
-done
-
-# ---------------------------
-# Third loop
-# ---------------------------
-for planning_steps in 15; do
-  for inner_planning_steps in 2 5; do
-    for entropy_threshold in 2 1.5 1; do
-      for planning_mode in value reward; do
-        for seed in 0 1 2; do
-            run_experiment \
-                evaluation.planning_steps=$planning_steps \
-                evaluation.inner_planning_steps=$inner_planning_steps \
-                evaluation.entropy_threshold=$entropy_threshold \
-                evaluation.planning_mode=$planning_mode \
-                evaluation.planning_depth=5 \
-                common.seed=$seed \
-                wandb.mode=offline
-        done
-      done
-    done
-  done
-done
-
-for planning_steps in 20; do
-  for inner_planning_steps in 1 2 5; do
-    for entropy_threshold in 2 1.5 1; do
-      for planning_mode in value reward; do
-        for seed in 0 1 2; do
-            run_experiment \
-                evaluation.planning_steps=$planning_steps \
-                evaluation.inner_planning_steps=$inner_planning_steps \
-                evaluation.entropy_threshold=$entropy_threshold \
-                evaluation.planning_mode=$planning_mode \
-                evaluation.planning_depth=5 \
-                common.seed=$seed \
-                wandb.mode=offline
+for env_type in Alien Amidar Assault Asterix BankHeist BattleZone Breakout ChopperCommand CrazyClimber DemonAttack Freeway Frostbite Gopher Hero Jamesbond Kangaroo Krull KungFuMaster MsPacman Pong PrivateEye Qbert RoadRunner Seaquest UpNDown
+  for planning_steps in 5; do
+    for inner_planning_steps in 1; do
+      for entropy_threshold in 1.5; do
+        for planning_mode in reward value; do
+          for seed in 0 1 2; do
+              run_experiment \
+                  initialization.env_type=$env_type \
+                  evaluation.planning_steps=$planning_steps \
+                  evaluation.inner_planning_steps=$inner_planning_steps \
+                  evaluation.entropy_threshold=$entropy_threshold \
+                  evaluation.planning_mode=$planning_mode \
+                  evaluation.planning_depth=2 \
+                  common.seed=$seed \
+                  wandb.mode=offline
+          done
         done
       done
     done

@@ -11,13 +11,14 @@ wandb:
   mode: online
   project: world_models
   entity: null
-  name: pruned_${evaluation.planning_steps}_roll_${evaluation.inner_planning_steps}_inner_${evaluation.entropy_threshold}_ent_${evaluation.planning_depth}_max_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}
+  name: ${initialization.env_type}_${evaluation.planning_steps}_roll_${evaluation.inner_planning_steps}_inner_${evaluation.entropy_threshold}_ent_${evaluation.planning_depth}_max_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}
   group: null
   tags: pruned
   notes: null
 
 initialization:
-  path_to_ckpt: /home/ucabahg/wm_inference_diffusion/trained_models/Boxing.pt  # if specified, will load the agent from this checkpoint
+  env_type: Boxing
+  path_to_ckpt: /home/ucabahg/wm_inference_diffusion/trained_models/${initialization.env_type}.pt   # if specified, will load the agent from this checkpoint
   load_denoiser: True
   load_rew_end_model: True
   load_actor_critic: True
@@ -35,7 +36,7 @@ collection:
   train:
     num_envs: 1
     epsilon: 0.01
-    num_steps_total: 100000
+    num_steps_total: 100 # I set a low number since we use static dataset default is 100000
     first_epoch:
       min: 5000
       max: 10000  # null: no maximum
@@ -48,7 +49,7 @@ collection:
     num_final_episodes: 100
 
 static_dataset:
-  path: /home/ucabahg/wm_inference_diffusion/wm_atari_2hrs/trained_policy_boxing  # if specified, will disable train/test data collection
+  path: /home/ucabahg/wm_inference_diffusion/wm_atari_2hrs/trained_policy_${initialization.env_type}  # if specified, will disable train/test data collection
   ignore_sample_weights: True
 
 training:
@@ -66,7 +67,7 @@ evaluation:
   planning_steps: 5
   entropy_threshold: 2
   inner_planning_steps: 0 # Number of steps to plan in the inner (meta-planning) loop
-  planning_depth: 10 # Maximum depth of the planning tree
+  planning_depth: 2 # Maximum depth of the planning tree
   planning_mode: value # reward, value, or td
 
 world_model_env:
