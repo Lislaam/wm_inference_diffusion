@@ -27,15 +27,16 @@ handle_failure() {
 
     echo "Clearing output directory..."
     rm -rf "$OUTPUT_DIR"
-
-    echo "Retrying run..."
 }
 
-# Wrapper to run Python safely
+# Wrapper to run Python safely (retry max 3 times)
 run_experiment() {
     local args=("$@")
-    while true; do
-        echo "Running experiment: ${args[*]}"
+    local retries=0
+    local max_retries=3
+
+    while (( retries < max_retries )); do
+        echo "🚀 Running experiment (attempt $((retries+1))/$max_retries): ${args[*]}"
 
         # Ensure clean environment
         pkill -9 -u "$USER" wandb || true
@@ -48,22 +49,23 @@ run_experiment() {
         set -e
 
         if [[ $exit_code -eq 0 ]]; then
-            echo "✅ Run completed, syncing latest run..."
-            if ! WANDB_API_KEY=$WANDB_KEY wandb sync "$(find "$OUTPUT_DIR" -type d -name 'offline-run-*' | sort -V | tail -n 1)"; then
-                handle_failure
-                continue
-            fi
-            break
+            echo "✅ Run completed successfully — syncing latest run..."
+            WANDB_API_KEY=$WANDB_KEY wandb sync "$(find "$OUTPUT_DIR" -type d -name 'offline-run-*' | sort -V | tail -n 1)" || echo "⚠️ Sync failed"
+            return 0
         else
+            echo "❌ Run failed (exit code $exit_code). Retrying..."
             handle_failure
+            ((retries++))
         fi
     done
+
+    echo "⚠️ Experiment failed after $max_retries attempts. Skipping..."
 }
 
 # ---------------------------
 # First loop
 # ---------------------------
-for env_type in Alien Amidar Assault Asterix BankHeist BattleZone Breakout ChopperCommand CrazyClimber DemonAttack Freeway Frostbite Gopher Hero Jamesbond Kangaroo Krull KungFuMaster MsPacman Pong PrivateEye Qbert RoadRunner Seaquest UpNDown
+for env_type in Alien Amidar Assault Asterix BankHeist BattleZone Breakout ChopperCommand CrazyClimber DemonAttack Freeway Frostbite Gopher Hero Jamesbond Kangaroo Krull KungFuMaster MsPacman Pong PrivateEye Qbert RoadRunner Seaquest UpNDown; do
   for planning_steps in 5; do
     for inner_planning_steps in 1; do
       for entropy_threshold in 1.5; do
