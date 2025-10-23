@@ -3,7 +3,6 @@ from pathlib import Path
 from typing import List, Union
 
 import hydra
-from hydra.utils import get_original_cwd
 from omegaconf import DictConfig, OmegaConf
 import torch
 import yaml
@@ -19,9 +18,8 @@ from utils import skip_if_run_is_over
 OmegaConf.register_new_resolver("eval", eval)
 
 def sync_atari_env():
-    project_root = Path(get_original_cwd())
-    trainer_path = project_root / "config" / "trainer.yaml"
-    atari_path   = project_root / "config" / "atari.yaml"
+    trainer_path = Path("../config/trainer.yaml")
+    atari_path = Path("../config/atari.yaml")
 
     # Load trainer.yaml
     with open(trainer_path, "r") as f:
