@@ -21,7 +21,7 @@ OmegaConf.register_new_resolver("eval", eval)
 def sync_atari_env(project_root: Path) -> None:
     """Update atari.yaml's train.id based on trainer.yaml initialization.env_type."""
     trainer_path = project_root / "config" / "trainer.yaml"
-    atari_path   = project_root / "config" / "atari.yaml"
+    atari_path   = project_root / "config" / "env" / "atari.yaml"
 
     # Load trainer.yaml
     with open(trainer_path, "r") as f:
