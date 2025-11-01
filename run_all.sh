@@ -68,7 +68,7 @@ for env_type in Alien Amidar Assault Asterix BankHeist BattleZone Breakout Chopp
         for planning_mode in reward value; do
           for seed in 0 1 2; do
             run_experiment \
-              world_model_env.env_type=$env_type \
+              env.train.env_type=$env_type \
               evaluation.planning_steps=$planning_steps \
               evaluation.inner_planning_steps=$inner_planning_steps \
               evaluation.entropy_threshold=$entropy_threshold \

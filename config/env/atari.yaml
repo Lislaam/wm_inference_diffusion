@@ -1,6 +1,6 @@
 train:
   env_type: Boxing
-  id: ${env_type}NoFrameskip-v4
+  id: ${.env_type}NoFrameskip-v4
   done_on_life_loss: True
   size: 64
   max_episode_steps: null
