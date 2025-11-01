@@ -11,7 +11,7 @@ wandb:
   mode: online
   project: world_models
   entity: null
-  name: ${env.train.env_type}_${evaluation.planning_steps}_roll_${evaluation.inner_planning_steps}_inner_${evaluation.entropy_threshold}_ent_${evaluation.planning_depth}_max_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}
+  name: $DATA_COLLECT_{env.train.env_type}_${evaluation.planning_steps}_roll_${evaluation.inner_planning_steps}_inner_${evaluation.entropy_threshold}_ent_${evaluation.planning_depth}_max_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}
   group: null
   tags: pruned
   notes: null
@@ -58,10 +58,10 @@ training:
   num_workers_data_loaders: 0
   model_free: False # if True, turn off world_model training and RL in imagination
   compile_wm: True
-  agent_in_wm: True  # if True, the agent is trained in the pretrained world model 
+  agent_in_wm: False  # if True, the agent is trained in the pretrained world model 
 
 evaluation:
-  should: True
+  should: False # Want to collect data for now
   every: 10
   planning_steps: 5
   entropy_threshold: 2
