@@ -35,7 +35,7 @@ collection:
   train:
     num_envs: 1
     epsilon: 0.01
-    num_steps_total: 100 # I set a low number since we use static dataset default is 100000
+    num_steps_total: 100000
     first_epoch:
       min: 5000
       max: 10000  # null: no maximum
@@ -48,7 +48,7 @@ collection:
     num_final_episodes: 100
 
 static_dataset:
-  path: /home/ucabahg/wm_inference_diffusion/wm_atari_2hrs/trained_policy_${env.train.env_type}  # if specified, will disable train/test data collection
+  path: null #/home/ucabahg/wm_inference_diffusion/wm_atari_2hrs/trained_policy_${env.train.env_type}  # if specified, will disable train/test data collection
   ignore_sample_weights: True
 
 training:
