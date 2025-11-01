@@ -11,13 +11,13 @@ wandb:
   mode: online
   project: world_models
   entity: null
-  name: $DATA_COLLECT_{env.train.env_type}_${evaluation.planning_steps}_roll_${evaluation.inner_planning_steps}_inner_${evaluation.entropy_threshold}_ent_${evaluation.planning_depth}_max_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}
+  name: $DATA_COLLECT_{env.env_type}_${evaluation.planning_steps}_roll_${evaluation.inner_planning_steps}_inner_${evaluation.entropy_threshold}_ent_${evaluation.planning_depth}_max_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}
   group: null
   tags: pruned
   notes: null
 
 initialization:
-  path_to_ckpt: /home/ucabahg/wm_inference_diffusion/trained_models/${env.train.env_type}.pt   # if specified, will load the agent from this checkpoint
+  path_to_ckpt: /home/ucabahg/wm_inference_diffusion/trained_models/${env.env_type}.pt   # if specified, will load the agent from this checkpoint
   load_denoiser: True
   load_rew_end_model: True
   load_actor_critic: True
@@ -48,7 +48,7 @@ collection:
     num_final_episodes: 100
 
 static_dataset:
-  path: null #/home/ucabahg/wm_inference_diffusion/wm_atari_2hrs/trained_policy_${env.train.env_type}  # if specified, will disable train/test data collection
+  path: null #/home/ucabahg/wm_inference_diffusion/wm_atari_2hrs/trained_policy_${env.env_type}  # if specified, will disable train/test data collection
   ignore_sample_weights: True
 
 training:
