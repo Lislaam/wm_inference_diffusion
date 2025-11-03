@@ -44,6 +44,8 @@ OmegaConf.register_new_resolver("eval", eval)
 def main(cfg: DictConfig) -> None:
     # configs are composed now; resolve interpolations
     OmegaConf.resolve(cfg)
+    print("env_type:", cfg.env.env_type)
+    print("train.id:", cfg.env.train.id)
 
     setup_visible_cuda_devices(cfg.common.devices)
     world_size = torch.cuda.device_count()
