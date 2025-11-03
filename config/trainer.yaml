@@ -61,7 +61,7 @@ training:
   agent_in_wm: False  # if True, the agent is trained in the pretrained world model 
 
 evaluation:
-  should: True # Want to collect data for now
+  should: False # Want to collect data for now
   every: 10
   planning_steps: 5
   entropy_threshold: 2
