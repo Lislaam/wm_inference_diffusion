@@ -2,15 +2,15 @@
 env_type: Boxing
 
 train:
-  id: ${.env_type}NoFrameskip-v4
-  done_on_life_loss: True
+  id: ${env.env_type}NoFrameskip-v4
+  done_on_life_loss: true
   size: 64
   max_episode_steps: null
-  
+
 test:
-  id: ${..train.id}
-  done_on_life_loss: False
-  size: ${..train.size}
+  id: ${env.train.id}
+  done_on_life_loss: false
+  size: ${env.train.size}
   max_episode_steps: null
 
-keymap: atari/${.train.id}
+keymap: atari/${env.train.id}
