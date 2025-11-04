@@ -13,7 +13,7 @@ wandb:
   entity: null
   name: DATA_COLLECT_${env.env_type}_${evaluation.planning_steps}_roll_${evaluation.inner_planning_steps}_inner_${evaluation.entropy_threshold}_ent_${evaluation.planning_depth}_max_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}
   group: null
-  tags: pruned
+  tags: null
   notes: null
 
 initialization:
