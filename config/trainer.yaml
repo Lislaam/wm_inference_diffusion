@@ -58,7 +58,7 @@ training:
   num_workers_data_loaders: 0
   model_free: False # if True, turn off world_model training and RL in imagination
   compile_wm: True
-  agent_in_wm: False  # if True, the agent is trained in the pretrained world model 
+  agent_in_wm: True  # if True, the agent is trained in the pretrained world model 
 
 evaluation:
   should: False # Want to collect data for now
