@@ -1,5 +1,5 @@
 # @package env
-env_type: Boxing
+env_type: ${env.env_type}
 
 train:
   id: ${.env_type}NoFrameskip-v4
