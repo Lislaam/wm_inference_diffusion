@@ -16,7 +16,7 @@ from inference_time_planning import WMInference
 from utils import skip_if_run_is_over
 
 
-OmegaConf.register_new_resolver("eval", eval)
+# OmegaConf.register_new_resolver("eval", eval)
 
 # def sync_atari_env(project_root: Path) -> None:
 #     """Update atari.yaml's train.id based on trainer.yaml initialization.env_type."""
