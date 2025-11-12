@@ -1,20 +1,15 @@
 #!/bin/bash -l
 
-#$ -l gpu=1
-#$ -ac allow=L
-#$ -l h_rt=72:0:0
-#$ -l mem=48G
+set -euo pipefail
+trap "echo 'Script interrupted'; exit 1" INT
 
-# set -euo pipefail
-# trap "echo 'Script interrupted'; exit 1" INT
-
-# source ~/miniconda/etc/profile.d/conda.sh
+source ~/miniconda3/etc/profile.d/conda.sh
 conda activate diffusion
 cd wm_inference_diffusion
 
 export WANDB_MODE=offline
 export WANDB_START_METHOD=fork
-OUTPUT_DIR="/myriadfs/home/ucabahg/wm_inference_diffusion/outputs"
+OUTPUT_DIR="/outputs"
 WANDB_KEY="8e782a594dad15c64868ccff129984a8a344af28"
 
 # Function to handle failure
