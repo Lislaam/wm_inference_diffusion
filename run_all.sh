@@ -5,11 +5,11 @@
 #$ -l h_rt=72:0:0
 #$ -l mem=48G
 
-set -euo pipefail
-trap "echo 'Script interrupted'; exit 1" INT
+# set -euo pipefail
+# trap "echo 'Script interrupted'; exit 1" INT
 
-source ~/miniconda/etc/profile.d/conda.sh
-conda activate .venv
+# source ~/miniconda/etc/profile.d/conda.sh
+conda activate diffusion
 cd wm_inference_diffusion
 
 export WANDB_MODE=offline
