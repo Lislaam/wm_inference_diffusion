@@ -53,7 +53,7 @@ for env_type in Alien; do
               evaluation.planning_mode="$planning_mode" \
               evaluation.planning_depth=2 \
               common.seed="$seed" \
-              wandb.mode=online
+              wandb.mode=offline
 
           done
         done
