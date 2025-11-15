@@ -7,7 +7,7 @@ source ~/miniconda3/etc/profile.d/conda.sh
 conda activate diffusion
 cd ~/wm_inference_diffusion
 
-export WANDB_MODE=offline
+export WANDB_MODE=online
 export WANDB_START_METHOD=fork
 OUTPUT_DIR="./outputs"
 WANDB_KEY="8e782a594dad15c64868ccff129984a8a344af28"
@@ -53,7 +53,7 @@ for env_type in Alien; do
               evaluation.planning_mode="$planning_mode" \
               evaluation.planning_depth=2 \
               common.seed="$seed" \
-              wandb.mode=offline
+              wandb.mode=online
 
           done
         done
