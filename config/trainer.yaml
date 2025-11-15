@@ -17,7 +17,7 @@ wandb:
   notes: null
 
 initialization:
-  path_to_ckpt: /home/ucabahg/wm_inference_diffusion/trained_models/${env.env_type}.pt   # if specified, will load the agent from this checkpoint
+  path_to_ckpt: trained_models/${env.env_type}.pt   # if specified, will load the agent from this checkpoint
   load_denoiser: True
   load_rew_end_model: True
   load_actor_critic: True
@@ -48,7 +48,7 @@ collection:
     num_final_episodes: 100
 
 static_dataset:
-  path: null #/home/ucabahg/wm_inference_diffusion/wm_atari_2hrs/trained_policy_${env.env_type}  # if specified, will disable train/test data collection
+  path: null # wm_atari_2hrs/trained_policy_${env.env_type}  # if specified, will disable train/test data collection
   ignore_sample_weights: True
 
 training:
