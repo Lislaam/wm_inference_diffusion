@@ -34,25 +34,27 @@ run_experiment() {
         pkill -9 wandb || true
     fi
 
-    RUN_DIR="$(pwd)"
+    # Find the most recent Hydra output directory
+    LAST_RUN="$(ls -td outputs/*/* 2>/dev/null | head -n 1)"
+    DATASET_DIR="$LAST_RUN/dataset"
 
-    if [[ -d "$RUN_DIR/dataset/train" ]]; then
+    if [[ -d "$DATASET_DIR/train" ]]; then
         DEST="$HOME/wm_inference_diffusion/wm_atari_2hrs/trained_policy_${env_type}"
         mkdir -p "$DEST"
 
-        mv "$RUN_DIR/dataset/train" "$DEST/train"
-        mv "$RUN_DIR/dataset/test"  "$DEST/test"
+        mv "$DATASET_DIR/train" "$DEST/train"
+        mv "$DATASET_DIR/test"  "$DEST/test"
 
-        echo "📦 Moved dataset from $RUN_DIR/dataset → $DEST"
+        echo "📦 Moved dataset from $DATASET_DIR → $DEST"
     else
-        echo "⚠️ No dataset produced in $RUN_DIR"
+        echo "⚠️ No dataset produced in $DATASET_DIR"
     fi
 }
 
 # -------------------------------------------------------
 # MAIN LOOP
 # -------------------------------------------------------
-for env_type in Amidar Assault Asterix BankHeist BattleZone Breakout ChopperCommand CrazyClimber DemonAttack Freeway Frostbite Gopher Hero Jamesbond Kangaroo Krull KungFuMaster MsPacman Pong PrivateEye Qbert RoadRunner Seaquest UpNDown; do #
+for env_type in BattleZone; do #Breakout ChopperCommand CrazyClimber DemonAttack Freeway Frostbite Gopher Hero Jamesbond Kangaroo Krull KungFuMaster MsPacman Pong PrivateEye Qbert RoadRunner Seaquest UpNDown; do # Alien Amidar Assault Asterix BankHeist 
   for planning_steps in 0; do
     for inner_planning_steps in 0; do
       for entropy_threshold in 2; do
