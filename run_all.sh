@@ -33,21 +33,26 @@ run_experiment() {
         echo "Killing stray wandb processes..."
         pkill -9 wandb || true
     fi
-    DEST="wm_atari_2hrs/trained_policy_${env_type}"
 
-    mkdir -p "$DEST"
+    RUN_DIR="$(pwd)"
 
-    # Move train and test into your final location
-    mv dataset/train "$DEST/train"
-    mv dataset/test  "$DEST/test"
+    if [[ -d "$RUN_DIR/dataset/train" ]]; then
+        DEST="$HOME/wm_inference_diffusion/wm_atari_2hrs/trained_policy_${env_type}"
+        mkdir -p "$DEST"
 
-    echo "📦 Moved dataset to $DEST"
+        mv "$RUN_DIR/dataset/train" "$DEST/train"
+        mv "$RUN_DIR/dataset/test"  "$DEST/test"
+
+        echo "📦 Moved dataset from $RUN_DIR/dataset → $DEST"
+    else
+        echo "⚠️ No dataset produced in $RUN_DIR"
+    fi
 }
 
 # -------------------------------------------------------
 # MAIN LOOP
 # -------------------------------------------------------
-for env_type in Alien; do # Amidar Assault Asterix BankHeist BattleZone Breakout ChopperCommand CrazyClimber DemonAttack Freeway Frostbite Gopher Hero Jamesbond Kangaroo Krull KungFuMaster MsPacman Pong PrivateEye Qbert RoadRunner Seaquest UpNDown; do #
+for env_type in Amidar Assault Asterix BankHeist BattleZone Breakout ChopperCommand CrazyClimber DemonAttack Freeway Frostbite Gopher Hero Jamesbond Kangaroo Krull KungFuMaster MsPacman Pong PrivateEye Qbert RoadRunner Seaquest UpNDown; do #
   for planning_steps in 0; do
     for inner_planning_steps in 0; do
       for entropy_threshold in 2; do
