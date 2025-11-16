@@ -8,7 +8,7 @@
 set -e
 
 TMUX_VERSION=1.8
-INSTALL_DIR=/group/hepheno/smsharma
+INSTALL_DIR=/home/aguzel
 
 # create our directories
 mkdir -p $INSTALL_DIR/local $INSTALL_DIR/tmux_tmp
