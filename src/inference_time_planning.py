@@ -367,7 +367,7 @@ class WMInference(StateDictMixin):
                 use_real_step = (
                                     i < self._cfg.agent.denoiser.inner_model.num_steps_conditioning
                                     or abs(entropy - running_avg_entropy)
-                                        > self.cfg.entropy_threshold_sigma * math.sqrt(running_var_entropy)
+                                        > self.cfg.evaluation.entropy_threshold_sigma * math.sqrt(running_var_entropy)
                                     or self._cfg.evaluation.planning_steps == 0
                                 )
 
