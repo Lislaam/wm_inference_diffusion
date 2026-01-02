@@ -11,7 +11,7 @@ wandb:
   mode: online
   project: world_models
   entity: null
-  name: ${env.env_type}_${evaluation.planning_steps}_roll_${evaluation.inner_planning_steps}_inner_${evaluation.entropy_threshold}_ent_${evaluation.planning_depth}_max_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}
+  name: ${env.env_type}_adaptive_${evaluation.planning_steps}_roll_${evaluation.inner_planning_steps}_inner_${evaluation.entropy_threshold}_ent_${evaluation.planning_depth}_max_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}
   group: null
   tags: null
   notes: null
@@ -64,7 +64,7 @@ evaluation:
   should: True # Want to collect data for now
   every: 10
   planning_steps: 5
-  entropy_threshold: 2
+  entropy_threshold_sigma: 1 # Changed the threshold to be a number of sigma away from mean entropy
   inner_planning_steps: 0 # Number of steps to plan in the inner (meta-planning) loop
   planning_depth: 2 # Maximum depth of the planning tree
   planning_mode: value # reward, value, or td

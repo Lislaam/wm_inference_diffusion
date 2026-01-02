@@ -176,6 +176,8 @@ class WMInference(StateDictMixin):
         wandb.define_metric("actor_critic/eval/td_error", step_metric="eval_step")
         wandb.define_metric("actor_critic/eval/planned_td_error", step_metric="eval_step")
         wandb.define_metric("actor_critic/eval/planning_flag", step_metric="eval_step")
+        wandb.define_metric("entropy_running_avg", step_metric="eval_step")
+        wandb.define_metric("entropy_running_var", step_metric="eval_step")
         wandb.define_metric("unplanned_obs_sequence", step_metric="eval_step")
         wandb.define_metric("obs_sequence", step_metric="eval_step")
         wandb.define_metric("wm_obs_sequence", step_metric="eval_step")
@@ -339,6 +341,10 @@ class WMInference(StateDictMixin):
         step = 0
         planning_flag = 0
         plan_count = 0
+        running_avg_entropy = entropy
+        running_var_entropy = 0
+        mean_entropy = 0.0
+        M2_entropy = 0.0            
         for i in trange(num_episodes, desc="Evaluating actor-critic with planning"):
             if not done:
                 start_time = time.time()
@@ -348,7 +354,22 @@ class WMInference(StateDictMixin):
                 probs = dist.probs.detach().cpu()
                 entropy = dist.entropy().detach().cpu().item() / math.log(2)
 
-                use_real_step = (i < self._cfg.agent.denoiser.inner_model.num_steps_conditioning) or (entropy < self._cfg.evaluation.entropy_threshold) or (self._cfg.evaluation.planning_steps == 0)
+                running_avg_entropy += (entropy - running_avg_entropy) / (i+1)
+
+                n = i + 1
+                delta = entropy - mean_entropy
+                mean_entropy += delta / n
+                delta2 = entropy - mean_entropy
+                M2_entropy += delta * delta2
+
+                running_var_entropy = M2_entropy / (num_episodes - 1)
+
+                use_real_step = (
+                                    i < self._cfg.agent.denoiser.inner_model.num_steps_conditioning
+                                    or abs(entropy - running_avg_entropy)
+                                        > self.cfg.entropy_threshold_sigma * math.sqrt(running_var_entropy)
+                                    or self._cfg.evaluation.planning_steps == 0
+                                )
 
                 if use_real_step:
                     planning_flag = 0
@@ -499,6 +520,8 @@ class WMInference(StateDictMixin):
                     "actor_critic/eval/planned_cumulative_reward": sum(episode_rewards),
                     "actor_critic/eval/planned_mean_action_distribution": wandb.Histogram(probs.numpy()),
                     "actor_critic/eval/planned_entropy": entropy,
+                    "entropy_running_avg": running_avg_entropy,
+                    "entropy_running_var": running_var_entropy,
                     "obs_sequence": wandb.Image(Image.fromarray(grid)),           # from real obs
                     "wm_obs_sequence": wandb.Image(Image.fromarray(wm_grid)),     # from world model buffer
                     "meta_planning_depth": depth,

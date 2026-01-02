@@ -16,30 +16,6 @@ from inference_time_planning import WMInference
 from utils import skip_if_run_is_over
 
 
-# OmegaConf.register_new_resolver("eval", eval)
-
-# def sync_atari_env(project_root: Path) -> None:
-#     """Update atari.yaml's train.id based on trainer.yaml initialization.env_type."""
-#     trainer_path = project_root / "config" / "trainer.yaml"
-#     atari_path   = project_root / "config" / "env" / "atari.yaml"
-
-#     # Load trainer.yaml
-#     with open(trainer_path, "r") as f:
-#         trainer_cfg = yaml.safe_load(f)
-
-#     # Load atari.yaml
-#     with open(atari_path, "r") as f:
-#         atari_cfg = yaml.safe_load(f)
-
-#     env_type = (trainer_cfg or {}).get("initialization", {}).get("env_type")
-#     if env_type:
-#         atari_cfg.setdefault("train", {})["id"] = f"{env_type}NoFrameskip-v4"
-#         with open(atari_path, "w") as f:
-#             yaml.safe_dump(atari_cfg, f, sort_keys=False)
-#         print(f"✅ Synced: train.id = {env_type}NoFrameskip-v4 in atari.yaml")
-#     else:
-#         print("⚠️ env_type not found in trainer.yaml")
-
 @hydra.main(config_path="../config", config_name="trainer", version_base="1.3")
 def main(cfg: DictConfig) -> None:
     # configs are composed now; resolve interpolations
