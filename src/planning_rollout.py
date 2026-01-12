@@ -270,7 +270,7 @@ def inner_planning(agent, world_model_env, num_actions, obs_buffer, act_buffer, 
             else:
                 running_var_entropy = 0.0
 
-            if abs(entropy - running_avg_entropy) > cfg.evaluation.entropy_threshold_sigma * math.sqrt(running_var_entropy) and depth < max_depth and remaining_steps - i - 1 > 0:
+            if abs(entropy - running_avg_entropy) > cfg.evaluation.entropy_threshold_sigma * math.sqrt(running_var_entropy) and depth < max_depth and remaining_planning_steps - i - 1 > 0:
                 act_buf[:, -1], latest_entropies[a], depth = inner_planning(agent, world_model_env, num_actions, obs_buf, act_buf, 
                                                         wm_hx_a.clone(), wm_cx_a.clone(), agent_hx_a.clone(), agent_cx_a.clone(), 
                                                         cfg, depth + 1, max_depth=max_depth, 
