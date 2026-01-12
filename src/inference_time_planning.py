@@ -341,7 +341,7 @@ class WMInference(StateDictMixin):
         step = 0
         planning_flag = 0
         plan_count = 0
-        running_avg_entropy = entropy
+        running_avg_entropy = 0
         running_var_entropy = 0
         mean_entropy = 0.0
         M2_entropy = 0.0            
@@ -354,15 +354,18 @@ class WMInference(StateDictMixin):
                 probs = dist.probs.detach().cpu()
                 entropy = dist.entropy().detach().cpu().item() / math.log(2)
 
+                # Welford algorithm for running Variance
                 running_avg_entropy += (entropy - running_avg_entropy) / (i+1)
-
                 n = i + 1
                 delta = entropy - mean_entropy
                 mean_entropy += delta / n
                 delta2 = entropy - mean_entropy
                 M2_entropy += delta * delta2
-
-                running_var_entropy = M2_entropy / (num_episodes - 1)
+                
+                if n > 1:
+                    running_var_entropy = M2_entropy / (n - 1)   # unbiased sample variance
+                else:
+                    running_var_entropy = 0.0
 
                 use_real_step = (
                                     i < self._cfg.agent.denoiser.inner_model.num_steps_conditioning
@@ -402,8 +405,8 @@ class WMInference(StateDictMixin):
                     planning_flag = 100
                     plan_count += 1
 
-                    plan = multistep_planning(self.agent, world_model_env, self.env.num_actions, self._cfg)
-                    best_action, candidate_actions, action_predicted_rews, wm_predicted_obs, entropy, depth = plan
+                    plan = multistep_planning(self.agent, world_model_env, self.env.num_actions, (running_avg_entropy, mean_entropy, M2_entropy), i, self._cfg)
+                    best_action, candidate_actions, action_predicted_rews, wm_predicted_obs, entropy, depth, (running_avg_entropy, mean_entropy, M2_entropy) = plan
 
                     obs, rewards, terminated, truncated, infos = env.step(best_action)
                     done = terminated | truncated

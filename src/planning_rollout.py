@@ -5,7 +5,7 @@ import torch
 from torch.distributions.categorical import Categorical
 
 
-def multistep_planning(agent, world_model_env, num_actions, cfg):
+def multistep_planning(agent, world_model_env, num_actions, running_avg_stats, current_step, cfg):
     """
     Perform multistep planning using the world model environment.
     Pads all aborted or high-entropy trajectories to avoid indexing errors.
@@ -55,6 +55,11 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
             rollout_valid = True
             last_value = 0.0
 
+            # Re-init running avg at the beginning of each fresh rollout
+            running_avg_entropy, mean_entropy, M2_entropy = running_avg_stats
+            n = current_step + 1
+            running_var_entropy = M2_entropy / (n - 1)   
+
             for i in range(cfg.evaluation.planning_steps):
                 rews = []
 
@@ -79,13 +84,27 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
                 entropy = dist.entropy().detach().cpu().item() / math.log(2)
                 latest_entropies[a] = entropy
 
+                # Welford algorithm for running Variance
+                n = current_step + i + 1
+                running_avg_entropy += (entropy - running_avg_entropy) / n
+                delta = entropy - mean_entropy
+                mean_entropy += delta / n
+                delta2 = entropy - mean_entropy
+                M2_entropy += delta * delta2
+                
+                if n > 1:
+                    running_var_entropy = M2_entropy / (n - 1)   # unbiased sample variance
+                else:
+                    running_var_entropy = 0.0
+
                 need_inner = (
                     cfg.evaluation.inner_planning_steps != 0 and
                     depths[a] < max_depth and
                     max_depth < cfg.evaluation.planning_depth
                 )
 
-                if entropy > cfg.evaluation.entropy_threshold:
+                if (abs(entropy - running_avg_entropy) > 
+                    cfg.evaluation.entropy_threshold_sigma * math.sqrt(running_var_entropy)):
                     if need_inner:
                         inner_update = inner_planning(
                             agent, world_model_env, num_actions,
@@ -93,11 +112,16 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
                             wm_hx.clone(), wm_cx.clone(),
                             agent_hx.clone(), agent_cx.clone(),
                             cfg, depths[a]+1, max_depth=max_depth,
-                            remaining_steps=cfg.evaluation.planning_steps - i - 1
+                            remaining_planning_steps=cfg.evaluation.planning_steps - i - 1,
+                            initial_step = current_step,
+                            initial_planning_step = i,
+                            running_avg_var_stats = (running_avg_entropy, running_var_entropy, 
+                                                     mean_entropy, M2_entropy, n)
                         )
-                        if inner_update[1] < cfg.evaluation.entropy_threshold:
+                        if (abs(inner_update[1] - running_avg_entropy)
+                                        > cfg.evaluation.entropy_threshold_sigma * math.sqrt(running_var_entropy)):
                             act_buffer[:, -1], latest_entropies[a], depths[a] = inner_update
-                        else: # Inner selection action was too high entropy
+                        else: # Inner selection action was more than 1 std from mean
                             rollout_valid = False
                             break
                     else:
@@ -149,6 +173,7 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
                     wm_predicted_obs,            # already filled with obs per action
                     latest_entropies[best_action],
                     depths[best_action],
+                    (running_avg_entropy, mean_entropy, M2_entropy)
                 )
             else:
                 max_depth += 1
@@ -176,18 +201,19 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
     return (best_action, np.array(candidate_actions),
             action_predicted_rews, wm_predicted_obs,
             latest_entropies[best_action.item()],
-            depths[best_action.item()])
+            depths[best_action.item()],
+            (running_avg_entropy, mean_entropy, M2_entropy))
 
 
 def inner_planning(agent, world_model_env, num_actions, obs_buffer, act_buffer, wm_hx, wm_cx, agent_hx, agent_cx,
-                   cfg, depth, max_depth, remaining_steps):
+                   cfg, depth, max_depth, remaining_planning_steps, initial_step, initial_planning_step, running_avg_var_stats):
     """
     Perform planning *within* a rollout when entropy is high.
     Returns the selected next action based on imagination from current buffer state.
     This avoids overwriting or re-cloning buffers from real env.
     """
     ############ TD MODE IS NOT SUPPORTED YET ############
-    horizon = remaining_steps if remaining_steps > 0 else 1  # always at least 1 step
+    horizon = remaining_planning_steps if remaining_planning_steps > 0 else 1  # always at least 1 step
 
     action_predicted_rews = np.zeros((num_actions, horizon))
     action_predicted_values = np.zeros((num_actions, horizon))
@@ -206,8 +232,9 @@ def inner_planning(agent, world_model_env, num_actions, obs_buffer, act_buffer, 
         depth = initial_depth  # Reset depth for each action
 
         act_buf[:, -1] = a  # candidate action
-
-        for i in range(remaining_steps):
+                 
+        running_avg_entropy, running_var_entropy, mean_entropy, M2_entropy, n = running_avg_var_stats
+        for i in range(remaining_planning_steps):
             rews = [] # Store rewards for multiple samples
             next_obs, _ = world_model_env.sampler.sample(obs_buf, act_buf)
             logits_rew, _, (wm_hx_a, wm_cx_a) = world_model_env.rew_end_model.predict_rew_end(
@@ -230,11 +257,28 @@ def inner_planning(agent, world_model_env, num_actions, obs_buffer, act_buffer, 
             entropy = dist.entropy().detach().cpu().item() / math.log(2)
             latest_entropies[a] = entropy  # Store latest entropy for this action
 
-            if entropy > cfg.evaluation.entropy_threshold and depth < max_depth and remaining_steps - i - 1 > 0:
+            # Welford algorithm for running Variance
+            n = i + 2 + initial_step # Add another step as this is an imagined-IMAGINED state (2 ahead)
+            running_avg_entropy += (entropy - running_avg_entropy) / n
+            delta = entropy - mean_entropy
+            mean_entropy += delta / n
+            delta2 = entropy - mean_entropy
+            M2_entropy += delta * delta2
+
+            if n > 1:
+                running_var_entropy = M2_entropy / (n - 1)   # unbiased sample variance
+            else:
+                running_var_entropy = 0.0
+
+            if abs(entropy - running_avg_entropy) > cfg.evaluation.entropy_threshold_sigma * math.sqrt(running_var_entropy) and depth < max_depth and remaining_steps - i - 1 > 0:
                 act_buf[:, -1], latest_entropies[a], depth = inner_planning(agent, world_model_env, num_actions, obs_buf, act_buf, 
                                                         wm_hx_a.clone(), wm_cx_a.clone(), agent_hx_a.clone(), agent_cx_a.clone(), 
                                                         cfg, depth + 1, max_depth=max_depth, 
-                                                        remaining_steps=remaining_steps - i - 1)
+                                                        remaining_planning_steps=remaining_planning_steps - i - 1,
+                                                        initial_step=initial_step,
+                                                        initial_planning_step=initial_planning_step,
+                                                        running_avg_var_stats=(running_avg_entropy, running_var_entropy, 
+                                                     mean_entropy, M2_entropy, n))
             else:
                 act_buf[:, -1] = dist.sample() # If this is too large entropy, main fn will probably discard action anyway
 
@@ -253,4 +297,4 @@ def inner_planning(agent, world_model_env, num_actions, obs_buffer, act_buffer, 
 
     best_action = torch.tensor([np.random.choice(np.array(candidate_actions))])  # Randomly select one of the best actions
 
-    return torch.tensor([np.random.choice(np.array(candidate_actions))]), latest_entropies[best_action.item()], depth
+    return torch.tensor([np.random.choice(np.array(candidate_actions))]), latest_entropies[best_action.item()], depth, 
