@@ -103,7 +103,7 @@ def multistep_planning(agent, world_model_env, num_actions, running_avg_stats, c
                     max_depth < cfg.evaluation.planning_depth
                 )
 
-                if (abs(entropy - running_avg_entropy) > 
+                if (abs(entropy - running_avg_entropy) <
                     cfg.evaluation.entropy_threshold_sigma * math.sqrt(running_var_entropy)):
                     if need_inner:
                         inner_update = inner_planning(
@@ -119,7 +119,7 @@ def multistep_planning(agent, world_model_env, num_actions, running_avg_stats, c
                                                      mean_entropy, M2_entropy, n)
                         )
                         if (abs(inner_update[1] - running_avg_entropy)
-                                        > cfg.evaluation.entropy_threshold_sigma * math.sqrt(running_var_entropy)):
+                                        < cfg.evaluation.entropy_threshold_sigma * math.sqrt(running_var_entropy)):
                             act_buffer[:, -1], latest_entropies[a], depths[a] = inner_update
                         else: # Inner selection action was more than 1 std from mean
                             rollout_valid = False
@@ -270,7 +270,7 @@ def inner_planning(agent, world_model_env, num_actions, obs_buffer, act_buffer, 
             else:
                 running_var_entropy = 0.0
 
-            if abs(entropy - running_avg_entropy) > cfg.evaluation.entropy_threshold_sigma * math.sqrt(running_var_entropy) and depth < max_depth and remaining_planning_steps - i - 1 > 0:
+            if abs(entropy - running_avg_entropy) < cfg.evaluation.entropy_threshold_sigma * math.sqrt(running_var_entropy) and depth < max_depth and remaining_planning_steps - i - 1 > 0:
                 act_buf[:, -1], latest_entropies[a], depth = inner_planning(agent, world_model_env, num_actions, obs_buf, act_buf, 
                                                         wm_hx_a.clone(), wm_cx_a.clone(), agent_hx_a.clone(), agent_cx_a.clone(), 
                                                         cfg, depth + 1, max_depth=max_depth, 
