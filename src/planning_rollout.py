@@ -119,7 +119,7 @@ def multistep_planning(agent, world_model_env, num_actions, running_avg_stats, c
                                                      mean_entropy, M2_entropy, n)
                         )
                         if (abs(inner_update[1] - running_avg_entropy)
-                                        < cfg.evaluation.entropy_threshold_sigma * math.sqrt(running_var_entropy)):
+                                        > cfg.evaluation.entropy_threshold_sigma * math.sqrt(running_var_entropy)):
                             act_buffer[:, -1], latest_entropies[a], depths[a] = inner_update
                         else: # Inner selection action was more than 1 std from mean
                             rollout_valid = False
