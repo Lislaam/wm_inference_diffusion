@@ -55,8 +55,8 @@ run_experiment() {
 # MAIN LOOP
 # -------------------------------------------------------
 for env_type in Alien; do # Amidar Assault Asterix BankHeist BattleZone Boxing Breakout ChopperCommand CrazyClimber DemonAttack Freeway Frostbite Gopher Hero Jamesbond Kangaroo Krull KungFuMaster MsPacman Pong PrivateEye Qbert RoadRunner Seaquest UpNDown; do #
-  for planning_steps in 0; do
-    for inner_planning_steps in 0; do
+  for planning_steps in 5; do
+    for inner_planning_steps in 1; do
       for entropy_threshold_sigma in 0.5; do
         for planning_mode in reward; do
           for seed in 0; do
