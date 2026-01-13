@@ -373,10 +373,10 @@ class WMInference(StateDictMixin):
                                         > self._cfg.evaluation.entropy_threshold_sigma * math.sqrt(running_var_entropy)
                                     or self._cfg.evaluation.planning_steps == 0
                                 )
-                print(abs(entropy - running_avg_entropy), self._cfg.evaluation.entropy_threshold_sigma * math.sqrt(running_var_entropy), abs(entropy - running_avg_entropy)
-                                        > self._cfg.evaluation.entropy_threshold_sigma * math.sqrt(running_var_entropy), use_real_step)
-                print(i < self._cfg.agent.denoiser.inner_model.num_steps_conditioning, abs(entropy - running_avg_entropy)
-                                        > self._cfg.evaluation.entropy_threshold_sigma * math.sqrt(running_var_entropy), self._cfg.evaluation.planning_steps == 0)
+                # print(abs(entropy - running_avg_entropy), self._cfg.evaluation.entropy_threshold_sigma * math.sqrt(running_var_entropy), abs(entropy - running_avg_entropy)
+                #                         > self._cfg.evaluation.entropy_threshold_sigma * math.sqrt(running_var_entropy), use_real_step)
+                # print(i < self._cfg.agent.denoiser.inner_model.num_steps_conditioning, abs(entropy - running_avg_entropy)
+                #                         > self._cfg.evaluation.entropy_threshold_sigma * math.sqrt(running_var_entropy), self._cfg.evaluation.planning_steps == 0)
                 if use_real_step:
                     planning_flag = 0
                     depth = 0
