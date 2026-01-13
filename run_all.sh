@@ -59,7 +59,7 @@ for env_type in Alien; do # Amidar Assault Asterix BankHeist BattleZone Boxing B
     for inner_planning_steps in 0; do
       for entropy_threshold_sigma in 0.5; do
         for planning_mode in reward; do
-          for seed in 0 1 2; do
+          for seed in 0; do
 
             run_experiment \
               env.env_type="$env_type" \
