@@ -54,104 +54,104 @@ run_experiment() {
 # -------------------------------------------------------
 # MAIN LOOP
 # -------------------------------------------------------
-for env_type in Alien; do # Amidar Assault Asterix BankHeist BattleZone Breakout ChopperCommand CrazyClimber DemonAttack Freeway Frostbite Gopher Hero Jamesbond Kangaroo Krull KungFuMaster MsPacman Pong PrivateEye Qbert RoadRunner Seaquest UpNDown
-  for planning_steps in 5; do
-    for inner_planning_steps in 1; do
-      for entropy_threshold in 1.75; do
-        for planning_mode in value reward; do
-          for seed in 0 1 2; do
+# for env_type in Alien; do # Amidar Assault Asterix BankHeist BattleZone Breakout ChopperCommand CrazyClimber DemonAttack Freeway Frostbite Gopher Hero Jamesbond Kangaroo Krull KungFuMaster MsPacman Pong PrivateEye Qbert RoadRunner Seaquest UpNDown
+#   for planning_steps in 5; do
+#     for inner_planning_steps in 1; do
+#       for entropy_threshold in 1.75; do
+#         for planning_mode in value reward; do
+#           for seed in 0 1 2; do
 
-            run_experiment \
-              env.env_type="$env_type" \
-              evaluation.planning_steps="$planning_steps" \
-              evaluation.inner_planning_steps="$inner_planning_steps" \
-              evaluation.entropy_threshold="$entropy_threshold" \
-              evaluation.planning_mode="$planning_mode" \
-              evaluation.planning_depth=2 \
-              common.seed="$seed" \
-              wandb.mode=online
+#             run_experiment \
+#               env.env_type="$env_type" \
+#               evaluation.planning_steps="$planning_steps" \
+#               evaluation.inner_planning_steps="$inner_planning_steps" \
+#               evaluation.entropy_threshold="$entropy_threshold" \
+#               evaluation.planning_mode="$planning_mode" \
+#               evaluation.planning_depth=2 \
+#               common.seed="$seed" \
+#               wandb.mode=online
 
-          done
-        done
-      done
-    done
-  done
-done
-
-
-for env_type in Amidar; do #  Assault Asterix BankHeist BattleZone Breakout ChopperCommand CrazyClimber DemonAttack Freeway Frostbite Gopher Hero Jamesbond Kangaroo Krull KungFuMaster MsPacman Pong PrivateEye Qbert RoadRunner Seaquest UpNDown
-  for planning_steps in 5; do
-    for inner_planning_steps in 1; do
-      for entropy_threshold in 1.25; do
-        for planning_mode in value reward; do
-          for seed in 0 1 2; do
-
-            run_experiment \
-              env.env_type="$env_type" \
-              evaluation.planning_steps="$planning_steps" \
-              evaluation.inner_planning_steps="$inner_planning_steps" \
-              evaluation.entropy_threshold="$entropy_threshold" \
-              evaluation.planning_mode="$planning_mode" \
-              evaluation.planning_depth=2 \
-              common.seed="$seed" \
-              wandb.mode=online
-
-          done
-        done
-      done
-    done
-  done
-done
+#           done
+#         done
+#       done
+#     done
+#   done
+# done
 
 
-for env_type in Assault; do #  Asterix BankHeist BattleZone Breakout ChopperCommand CrazyClimber DemonAttack Freeway Frostbite Gopher Hero Jamesbond Kangaroo Krull KungFuMaster MsPacman Pong PrivateEye Qbert RoadRunner Seaquest UpNDown
-  for planning_steps in 5; do
-    for inner_planning_steps in 1; do
-      for entropy_threshold in 1.25; do
-        for planning_mode in value reward; do
-          for seed in 0 1 2; do
+# for env_type in Amidar; do #  Assault Asterix BankHeist BattleZone Breakout ChopperCommand CrazyClimber DemonAttack Freeway Frostbite Gopher Hero Jamesbond Kangaroo Krull KungFuMaster MsPacman Pong PrivateEye Qbert RoadRunner Seaquest UpNDown
+#   for planning_steps in 5; do
+#     for inner_planning_steps in 1; do
+#       for entropy_threshold in 1.25; do
+#         for planning_mode in value reward; do
+#           for seed in 0 1 2; do
 
-            run_experiment \
-              env.env_type="$env_type" \
-              evaluation.planning_steps="$planning_steps" \
-              evaluation.inner_planning_steps="$inner_planning_steps" \
-              evaluation.entropy_threshold="$entropy_threshold" \
-              evaluation.planning_mode="$planning_mode" \
-              evaluation.planning_depth=2 \
-              common.seed="$seed" \
-              wandb.mode=online
+#             run_experiment \
+#               env.env_type="$env_type" \
+#               evaluation.planning_steps="$planning_steps" \
+#               evaluation.inner_planning_steps="$inner_planning_steps" \
+#               evaluation.entropy_threshold="$entropy_threshold" \
+#               evaluation.planning_mode="$planning_mode" \
+#               evaluation.planning_depth=2 \
+#               common.seed="$seed" \
+#               wandb.mode=online
 
-          done
-        done
-      done
-    done
-  done
-done
+#           done
+#         done
+#       done
+#     done
+#   done
+# done
 
 
-for env_type in Asterix; do #  BankHeist BattleZone Breakout ChopperCommand CrazyClimber DemonAttack Freeway Frostbite Gopher Hero Jamesbond Kangaroo Krull KungFuMaster MsPacman Pong PrivateEye Qbert RoadRunner Seaquest UpNDown
-  for planning_steps in 5; do
-    for inner_planning_steps in 1; do
-      for entropy_threshold in 1; do
-        for planning_mode in value reward; do
-          for seed in 0 1 2; do
+# for env_type in Assault; do #  Asterix BankHeist BattleZone Breakout ChopperCommand CrazyClimber DemonAttack Freeway Frostbite Gopher Hero Jamesbond Kangaroo Krull KungFuMaster MsPacman Pong PrivateEye Qbert RoadRunner Seaquest UpNDown
+#   for planning_steps in 5; do
+#     for inner_planning_steps in 1; do
+#       for entropy_threshold in 1.25; do
+#         for planning_mode in value reward; do
+#           for seed in 0 1 2; do
 
-            run_experiment \
-              env.env_type="$env_type" \
-              evaluation.planning_steps="$planning_steps" \
-              evaluation.inner_planning_steps="$inner_planning_steps" \
-              evaluation.entropy_threshold="$entropy_threshold" \
-              evaluation.planning_mode="$planning_mode" \
-              evaluation.planning_depth=2 \
-              common.seed="$seed" \
-              wandb.mode=online
+#             run_experiment \
+#               env.env_type="$env_type" \
+#               evaluation.planning_steps="$planning_steps" \
+#               evaluation.inner_planning_steps="$inner_planning_steps" \
+#               evaluation.entropy_threshold="$entropy_threshold" \
+#               evaluation.planning_mode="$planning_mode" \
+#               evaluation.planning_depth=2 \
+#               common.seed="$seed" \
+#               wandb.mode=online
 
-          done
-        done
-      done
-    done
-  done
-done
+#           done
+#         done
+#       done
+#     done
+#   done
+# done
+
+
+# for env_type in Asterix; do #  BankHeist BattleZone Breakout ChopperCommand CrazyClimber DemonAttack Freeway Frostbite Gopher Hero Jamesbond Kangaroo Krull KungFuMaster MsPacman Pong PrivateEye Qbert RoadRunner Seaquest UpNDown
+#   for planning_steps in 5; do
+#     for inner_planning_steps in 1; do
+#       for entropy_threshold in 1; do
+#         for planning_mode in value reward; do
+#           for seed in 0 1 2; do
+
+#             run_experiment \
+#               env.env_type="$env_type" \
+#               evaluation.planning_steps="$planning_steps" \
+#               evaluation.inner_planning_steps="$inner_planning_steps" \
+#               evaluation.entropy_threshold="$entropy_threshold" \
+#               evaluation.planning_mode="$planning_mode" \
+#               evaluation.planning_depth=2 \
+#               common.seed="$seed" \
+#               wandb.mode=online
+
+#           done
+#         done
+#       done
+#     done
+#   done
+# done
 
 
 for env_type in BankHeist; do # BattleZone Breakout ChopperCommand CrazyClimber DemonAttack Freeway Frostbite Gopher Hero Jamesbond Kangaroo Krull KungFuMaster MsPacman Pong PrivateEye Qbert RoadRunner Seaquest UpNDown
