@@ -532,31 +532,6 @@ for env_type in MsPacman; do # Pong PrivateEye Qbert RoadRunner Seaquest UpNDown
   for planning_steps in 5; do
     for inner_planning_steps in 1; do
       for entropy_threshold in 1; do
-        for planning_mode in value; do
-          for seed in 2; do
-
-            run_experiment \
-              env.env_type="$env_type" \
-              evaluation.planning_steps="$planning_steps" \
-              evaluation.inner_planning_steps="$inner_planning_steps" \
-              evaluation.entropy_threshold="$entropy_threshold" \
-              evaluation.planning_mode="$planning_mode" \
-              evaluation.planning_depth=2 \
-              common.seed="$seed" \
-              wandb.mode=online
-
-          done
-        done
-      done
-    done
-  done
-done
-
-
-for env_type in MsPacman; do # Pong PrivateEye Qbert RoadRunner Seaquest UpNDown
-  for planning_steps in 5; do
-    for inner_planning_steps in 1; do
-      for entropy_threshold in 1; do
         for planning_mode in reward; do
           for seed in 0 1 2; do
 
