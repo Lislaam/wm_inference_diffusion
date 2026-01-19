@@ -507,7 +507,7 @@ for env_type in KungFuMaster; do # MsPacman Pong PrivateEye Qbert RoadRunner Sea
   for planning_steps in 5; do
     for inner_planning_steps in 1; do
       for entropy_threshold in 1; do
-        for planning_mode in value reward; do
+        for planning_mode in reward; do
           for seed in 0 1 2; do
 
             run_experiment \
