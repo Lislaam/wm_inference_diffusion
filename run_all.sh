@@ -16,39 +16,40 @@ WANDB_KEY="8e782a594dad15c64868ccff129984a8a344af28"
 # Function to safely run experiment ONCE (no retries)
 # -------------------------------------------------------
 run_experiment() {
-    local args=("$@")
+  local args=("$@")
+  echo "🚀 Running experiment: ${args[*]}"
 
-    echo "🚀 Running experiment: ${args[*]}"
+  set +e
+  python src/main.py "${args[@]}"
+  exit_code=$?
+  set -e
 
-    set +e
-    python src/main.py "${args[@]}"
-    exit_code=$?
-    set -e
+  if [[ $exit_code -ne 0 ]]; then
+    echo "❌ Run failed (exit code $exit_code)"
+    echo "⚠️ Syncing offline W&B runs..."
+    WANDB_API_KEY=$WANDB_KEY wandb sync "$(find "$OUTPUT_DIR" -maxdepth 1 -type d -name 'offline-run-*' 2>/dev/null | sort -V)" || true
+    echo "Killing stray wandb processes..."
+    pkill -9 wandb || true
+    return 0   # <-- IMPORTANT: continue to next run
+  fi
 
-    if [[ $exit_code -ne 0 ]]; then
-        echo "❌ Run failed (exit code $exit_code)"
-        echo "⚠️ Syncing offline W&B runs..."
-        WANDB_API_KEY=$WANDB_KEY wandb sync "$(find "$OUTPUT_DIR" -maxdepth 1 -type d -name 'offline-run-*' | sort -V)" || true
+  # Find the most recent Hydra output directory
+  LAST_RUN="$(ls -td outputs/*/* 2>/dev/null | head -n 1 || true)"
+  [[ -z "$LAST_RUN" ]] && { echo "⚠️ No outputs/*/* run dir found"; return 0; }
 
-        echo "Killing stray wandb processes..."
-        pkill -9 wandb || true
-    fi
+  DATASET_DIR="$LAST_RUN/dataset"
+  [[ -d "$DATASET_DIR/train" ]] || { echo "⚠️ No dataset produced in $DATASET_DIR"; return 0; }
 
-    # Find the most recent Hydra output directory
-    LAST_RUN="$(ls -td outputs/*/* 2>/dev/null | head -n 1)"
-    DATASET_DIR="$LAST_RUN/dataset"
+  DEST="$HOME/wm_inference_diffusion/wm_atari_2hrs/trained_policy_${env_type}"
+  mkdir -p "$DEST"
 
-    if [[ -d "$DATASET_DIR/train" ]]; then
-        DEST="$HOME/wm_inference_diffusion/wm_atari_2hrs/trained_policy_${env_type}"
-        mkdir -p "$DEST"
+  # Don’t crash if folders already exist; overwrite cleanly
+  rm -rf "$DEST/train" "$DEST/test" || true
+  mv "$DATASET_DIR/train" "$DEST/train" || true
+  mv "$DATASET_DIR/test"  "$DEST/test"  || true
 
-        mv "$DATASET_DIR/train" "$DEST/train"
-        mv "$DATASET_DIR/test"  "$DEST/test"
-
-        echo "📦 Moved dataset from $DATASET_DIR → $DEST"
-    else
-        echo "⚠️ No dataset produced in $DATASET_DIR"
-    fi
+  echo "📦 Moved dataset from $DATASET_DIR → $DEST"
+  return 0
 }
 
 # -------------------------------------------------------
