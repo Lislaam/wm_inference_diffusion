@@ -67,6 +67,7 @@ for env_type in Alien Amidar Assault Asterix BankHeist BattleZone Breakout Chopp
             evaluation.inner_planning_steps="$inner_planning_steps" \
             evaluation.planning_mode="$planning_mode" \
             evaluation.planning_depth=2 \
+            evaluation.planning_percentage=0.05 \
             common.seed="$seed" \
             wandb.mode=online
 

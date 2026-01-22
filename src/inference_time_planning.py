@@ -348,7 +348,9 @@ class WMInference(StateDictMixin):
                 probs = dist.probs.detach().cpu()
                 entropy = dist.entropy().detach().cpu().item() / math.log(2)
 
-                use_real_step = (i < self._cfg.agent.denoiser.inner_model.num_steps_conditioning) or (entropy < self._cfg.evaluation.entropy_threshold) or (self._cfg.evaluation.planning_steps == 0)
+                use_real_step = ((i < self._cfg.agent.denoiser.inner_model.num_steps_conditioning) 
+                                 or (np.random.uniform() < self._cfg.evaluation.planning_percentage) 
+                                 or (self._cfg.evaluation.planning_steps == 0))
 
                 if use_real_step:
                     planning_flag = 0
