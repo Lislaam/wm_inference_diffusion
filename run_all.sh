@@ -58,7 +58,7 @@ run_experiment() {
 for env_type in Alien Amidar Assault Asterix BankHeist BattleZone Breakout ChopperCommand CrazyClimber DemonAttack Freeway Frostbite Gopher Hero Jamesbond Kangaroo Krull KungFuMaster MsPacman Pong PrivateEye Qbert RoadRunner Seaquest UpNDown; do
   for planning_steps in 5; do
     for inner_planning_steps in 1; do
-      for planning_percentage in 0.1, 0.2; do
+      for planning_percentage in 0.1 0.2; do
         for planning_mode in value reward; do
           for seed in 0 1 2; do
 
