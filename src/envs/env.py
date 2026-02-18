@@ -19,50 +19,24 @@ def make_atari_env(
     done_on_life_loss: bool,
     size: int,
     max_episode_steps: Optional[int],
-    seed: Optional[int] = None,
 ) -> TorchEnv:
-    def env_fn(rank=0):
-        def _thunk():
-            env = gymnasium.make(
-                id,
-                full_action_space=False,
-                frameskip=1,
-                render_mode="rgb_array",
-                max_episode_steps=max_episode_steps,
-            )
+    def env_fn():
+        env = gymnasium.make(
+            id,
+            full_action_space=False,
+            frameskip=1,
+            render_mode="rgb_array",
+            max_episode_steps=max_episode_steps,
+        )
+        env = AtariPreprocessing(
+            env=env,
+            noop_max=30,
+            frame_skip=4,
+            screen_size=size,
+        )
+        return env
 
-            # Set deterministic seed here
-            env.reset(seed=seed + rank if seed is not None else None)
-
-            # Set deterministic Atari preprocessing
-            env = AtariPreprocessing(
-                env=env,
-                noop_max=0,  # << set to 0 to disable random no-ops
-                frame_skip=4,
-                screen_size=size,
-            )
-            return env
-        return _thunk
-    
-    env = AsyncVectorEnv([env_fn(rank) for rank in range(num_envs)])
-    
-    # def env_fn():
-    #     env = gymnasium.make(
-    #         id,
-    #         full_action_space=False,
-    #         frameskip=1,
-    #         render_mode="rgb_array",
-    #         max_episode_steps=max_episode_steps,
-    #     )
-    #     env = AtariPreprocessing(
-    #         env=env,
-    #         noop_max=30,
-    #         frame_skip=4,
-    #         screen_size=size,
-    #     )
-    #     return env
-
-    # env = AsyncVectorEnv([env_fn for _ in range(num_envs)])
+    env = AsyncVectorEnv([env_fn for _ in range(num_envs)])
 
     # The AsyncVectorEnv resets the env on termination, which means that it will
     # reset the environment if we use the default AtariPreprocessing of gymnasium with
@@ -75,38 +49,6 @@ def make_atari_env(
     env = TorchEnv(env, device)
 
     return env
-
-
-def make_procgen_env(
-    id: str,
-    num_envs: int,
-    device: torch.device,
-    size: int,
-    distribution_mode: str = "easy",
-    num_levels: int = 200,
-    start_level: int = 0,
-    max_episode_steps: Optional[int] = None,
-    seed: Optional[int] = None,
-    **_: Any,
-) -> TorchProcgenEnv:
-    env_name = _extract_procgen_env_name(id)
-    env = ProcgenEnv(
-        num_envs=num_envs,
-        env_name=env_name,
-        num_levels=num_levels,
-        start_level=start_level,
-        distribution_mode=distribution_mode,
-        rand_seed=0 if seed is None else seed,
-    )
-    return TorchProcgenEnv(env, device=device, size=size, max_episode_steps=max_episode_steps)
-
-
-def make_env(name: str, **kwargs: Any) -> gymnasium.Wrapper:
-    if name == "atari":
-        return make_atari_env(**kwargs)
-    if name == "procgen":
-        return make_procgen_env(**kwargs)
-    raise ValueError(f"Unknown env family '{name}'. Expected 'atari' or 'procgen'.")
 
 
 class DoneOnLifeLoss(gymnasium.Wrapper):
@@ -152,24 +94,73 @@ class TorchEnv(gymnasium.Wrapper):
             return torch.tensor(x, dtype=torch.float32, device=self.device)
 
 
+    
+
+def make_procgen_env(
+    id: str,
+    num_envs: int,
+    device: torch.device,
+    size: int,  # e.g., 64 for 64x64 images
+    distribution_mode: str = "easy",
+    render_mode: Optional[str] = None,
+    num_levels: int = 200,
+    start_level: int = 0,
+    max_episode_steps: Optional[int] = 1000,
+) -> "TorchProcgenEnv":
+    """
+    Create a vectorized Procgen environment (num_envs copies), then wrap it to
+    return PyTorch tensors in NCHW format, normalized to [-1, 1].
+    """
+    # Create a single ProcgenEnv that is already vectorized to `num_envs`.
+    env = ProcgenEnv(
+        num_envs=num_envs,
+        env_name=id,
+        distribution_mode=distribution_mode,
+        render_mode=render_mode,
+        num_levels=num_levels,
+        start_level=start_level,
+                )
+    # if max_episode_steps is not None:
+    #     from gym.wrappers import TimeLimit  # or gymnasium.wrappers.TimeLimit if using Gymnasium
+    #     # Check if environment is vectorized via an 'envs' attribute.
+    #     if hasattr(env, "envs"):
+    #         # Patch each sub-environment with a dummy spec if missing.
+    #         for sub_env in env.envs:
+    #             if not hasattr(sub_env, "spec"):
+    #                 sub_env.spec = None
+    #         # Wrap each sub-environment.
+    #         env.envs = [TimeLimit(sub_env, max_episode_steps=max_episode_steps) for sub_env in env.envs]
+    #     else:
+    #         # For non-vectorized env, patch spec if missing.
+    #         if not hasattr(env, "spec"):
+    #             env.spec = None
+    #         env = TimeLimit(env, max_episode_steps=max_episode_steps)
+    
+
+    # Wrap it in a TorchProcgenEnv to handle PyTorch transformation.
+    return TorchProcgenEnv(env, device, size=size)
+
+
 class TorchProcgenEnv(gymnasium.Wrapper):
-    def __init__(
-        self,
-        env: ProcgenEnv,
-        device: torch.device,
-        size: int,
-        max_episode_steps: Optional[int],
-    ) -> None:
+    """
+    Minimal wrapper that:
+      1. Uses a vectorized ProcgenEnv with `num_envs`.
+      2. Converts observations from [N, H, W, C] to [N, C, H, W].
+      3. Normalizes pixels from [0, 255] to [-1, 1].
+      4. Returns actions, rewards, etc. as PyTorch tensors on the specified device.
+    """
+
+    def __init__(self, env: ProcgenEnv, device: torch.device, size: int):
         super().__init__(env)
         self.device = device
         self.num_envs = env.num_envs
         self.num_actions = env.action_space.n
         self.size = size
-        self.max_episode_steps = max_episode_steps
-        self.ep_len = np.zeros(self.num_envs, dtype=np.int32)
 
-        rgb_space = env.observation_space.spaces["rgb"]
+        original_space = env.observation_space
+        rgb_space = original_space.spaces["rgb"]  # This is the actual Box
         h, w, c = rgb_space.shape
+
         self.observation_space = gymnasium.spaces.Box(
             low=-1.0,
             high=1.0,
@@ -178,48 +169,43 @@ class TorchProcgenEnv(gymnasium.Wrapper):
         )
         self.action_space = env.action_space
 
-    def reset(self, *args, **kwargs) -> Tuple[Tensor, Dict[str, Any]]:
-        self.ep_len.fill(0)
-        obs = self.env.reset()
-        return self._to_tensor(self._extract_rgb(obs)), {}
+    def reset(self, seed=None, options=None, **kwargs):
+        # Gymnasium 0.26+ needs seed and options to be passed as kwargs, remoe them from kwargs
+        obs = self.env.reset(**kwargs)
+        return self._to_tensor(obs['rgb']), {}
 
     def step(self, actions: Tensor) -> Tuple[Tensor, Tensor, Tensor, Tensor, Dict[str, Any]]:
-        obs, rew, done, info = self.env.step(actions.cpu().numpy())
-        obs_rgb = self._extract_rgb(obs)
-
-        self.ep_len += 1
-        terminated = done.astype(bool)
-        if self.max_episode_steps is None:
-            truncated = np.zeros_like(terminated, dtype=bool)
+        result = self.env.step(actions.cpu().numpy())
+        if len(result) == 4:
+            # Gymnasium 0.26+ procgen envs return (obs, rew, done, info)
+            obs, rew, done, info = result
+            terminated = done
+            truncated = np.zeros_like(terminated, dtype=bool)  # or just np.array([False]*N)
+        elif len(result) == 5:
+            obs, rew, terminated, truncated, info = result
         else:
-            truncated = self.ep_len >= self.max_episode_steps
+            raise ValueError(f"Expected 4 or 5 return items, got {len(result)}")
 
         dead = np.logical_or(terminated, truncated)
-        out_info: Dict[str, Any] = {}
+        info = {}
         if dead.any():
-            out_info["final_observation"] = self._to_tensor(obs_rgb[dead])
-            self.ep_len[dead] = 0
+            # Extract the "rgb" key from obs (assuming it's a dictionary)
+            final_obs = obs['rgb'][dead]
+            final_obs_t = self._to_tensor(final_obs)
+            info['final_observation'] = final_obs_t
 
-        obs_t = self._to_tensor(obs_rgb)
-        rew_t = torch.tensor(rew, dtype=torch.float32, device=self.device)
-        term_t = torch.tensor(terminated, dtype=torch.uint8, device=self.device)
-        trunc_t = torch.tensor(truncated, dtype=torch.uint8, device=self.device)
-        return obs_t, rew_t, term_t, trunc_t, out_info
+        obs_t = self._to_tensor(obs["rgb"])
+        rew_t = torch.tensor(rew, device=self.device, dtype=torch.float32)
+        term_t = torch.tensor(terminated, device=self.device, dtype=torch.int64)
+        trunc_t = torch.tensor(truncated, device=self.device, dtype=torch.int64)
 
-    def _extract_rgb(self, obs: Any) -> np.ndarray:
-        return obs["rgb"] if isinstance(obs, dict) else obs
+        # Now return the standard 5-tuple as Gymnasium 0.26+ expects:
+        return obs_t, rew_t, term_t, trunc_t, info
 
-    def _to_tensor(self, x: np.ndarray) -> Tensor:
+    def _to_tensor(self, x: Tensor) -> Tensor:
         if x.ndim == 4:
             return torch.tensor(x, device=self.device).div(255).mul(2).sub(1).permute(0, 3, 1, 2).contiguous()
-        if x.dtype is np.dtype("bool"):
+        elif x.dtype is np.dtype("bool"):
             return torch.tensor(x, dtype=torch.uint8, device=self.device)
-        return torch.tensor(x, dtype=torch.float32, device=self.device)
-
-
-def _extract_procgen_env_name(id_: str) -> str:
-    # Supported forms: "coinrun", "procgen-coinrun-v0", "procgen:procgen-coinrun-v0"
-    normalized = id_.split(":", 1)[-1]
-    if normalized.startswith("procgen-") and normalized.endswith("-v0"):
-        return normalized[len("procgen-") : -len("-v0")]
-    return normalized
+        else:
+            return torch.tensor(x, dtype=torch.float32, device=self.device)
