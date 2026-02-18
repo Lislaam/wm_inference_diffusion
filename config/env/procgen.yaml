@@ -1,0 +1,16 @@
+# @package env
+env_type: Coinrun
+
+train:
+  id: ${env.env_type}NoFrameskip-v4
+  done_on_life_loss: true
+  size: 64
+  max_episode_steps: null
+
+test:
+  id: ${env.train.id}
+  done_on_life_loss: false
+  size: ${env.train.size}
+  max_episode_steps: null
+
+keymap: procgen/${env.train.id}

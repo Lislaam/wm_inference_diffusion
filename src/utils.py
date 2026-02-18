@@ -50,6 +50,26 @@ ATARI_100K_GAMES = [
 ]
 
 
+PROCGEN_100K_GAMES = [
+    "CoinRun",
+    "StarPilot",
+    "CaveFlyer",
+    "Dodgeball",
+    "Fruitbot",
+    "Chaser",
+    "Miner",
+    "Jumper",
+    "Leaper",
+    "Maze",
+    "BigFish",
+    "Heist",
+    "Climber",
+    "Plunder",
+    "Ninja",
+    "BossFight",
+]
+
+
 Logs = List[Dict[str, float]]
 LossAndLogs = Tuple[Tensor, Dict[str, Any]]
 
@@ -303,6 +323,23 @@ def prompt_atari_game():
             continue
         break
     game = ATARI_100K_GAMES[x]
+    return game
+
+
+def prompt_procgen_game():
+    for i, game in enumerate(PROCGEN_100K_GAMES):
+        print(f"{i:2d}: {game}")
+    while True:
+        x = input("\nEnter a number: ")
+        if not x.isdigit():
+            print("Invalid.")
+            continue
+        x = int(x)
+        if x < 0 or x > 25:
+            print("Invalid.")
+            continue
+        break
+    game = PROCGEN_100K_GAMES[x]
     return game
 
 

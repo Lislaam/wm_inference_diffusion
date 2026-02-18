@@ -6,6 +6,7 @@ hydra-core==1.3
 numpy==1.26.0
 opencv-python==4.10.0.84
 pillow==10.3.0
+procgen
 pygame==2.5.2
 torch==2.4.1
 torcheval==0.0.7

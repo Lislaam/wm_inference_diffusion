@@ -1,5 +1,5 @@
 defaults:
-  - env: atari      # load environment config first
+  - env: procgen      # load environment config first
   - agent: default
   - _self_  
 
@@ -28,7 +28,7 @@ common:
   resume: False # do not modify, set by scripts/resume.sh only.
 
 checkpointing:
-  save_agent_every: 9999999999999999999
+  save_agent_every: 100
   num_to_keep: null  # number of checkpoints to keep, use null to disable
 
 collection:
@@ -48,7 +48,7 @@ collection:
     num_final_episodes: 100
 
 static_dataset:
-  path: /home/aguzel/wm_inference_diffusion/wm_atari_2hrs/trained_policy_${env.env_type}  # if specified, will disable train/test data collection
+  path: null  # if specified, will disable train/test data collection
   ignore_sample_weights: True
 
 training:

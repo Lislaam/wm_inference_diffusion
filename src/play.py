@@ -71,14 +71,25 @@ def prepare_dataset_mode(cfg: DictConfig) -> Tuple[DatasetEnv, Keymap, ActionNam
 def prepare_play_mode(cfg: DictConfig, args: argparse.Namespace) -> Tuple[PlayEnv, Keymap, ActionNames]:
     # Checkpoint
     if args.pretrained:
-        name = prompt_atari_game()
-        path_ckpt = download(f"atari_100k/models/{name}.pt")
+        if cfg.env == "atari":
+            name = prompt_atari_game()
+            path_ckpt = download(f"atari_100k/models/{name}.pt")
 
-        # Override config
-        cfg.agent = OmegaConf.load(download("atari_100k/config/agent/default.yaml"))
-        cfg.env = OmegaConf.load(download("atari_100k/config/env/atari.yaml"))
-        cfg.env.train.id = cfg.env.test.id = f"{name}NoFrameskip-v4"
-        cfg.world_model_env.horizon = 50
+            # Override config
+            cfg.agent = OmegaConf.load(download("atari_100k/config/agent/default.yaml"))
+            cfg.env = OmegaConf.load(download("atari_100k/config/env/atari.yaml"))
+            cfg.env.train.id = cfg.env.test.id = f"{name}NoFrameskip-v4"
+            cfg.world_model_env.horizon = 50
+
+        elif cfg.env == "procgen":
+            name = prompt_procgen_game()
+            path_ckpt = download(f"procgen_100k/models/{name}.pt")
+
+            # Override config
+            cfg.agent = OmegaConf.load(download("procgen_100k/config/agent/default.yaml"))
+            cfg.env = OmegaConf.load(download("procgen_100k/config/env/procgen.yaml"))
+            cfg.env.train.id = cfg.env.test.id = f"procgen-{name}-v0"
+            cfg.world_model_env.horizon = 50
     else:
         path_ckpt = get_path_agent_ckpt("checkpoints", epoch=-1)
 
