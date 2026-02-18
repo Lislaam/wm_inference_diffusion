@@ -12,9 +12,9 @@ from torch.utils.data import DataLoader
 from agent import Agent
 from coroutines.collector import make_collector, NumToCollect
 from data import BatchSampler, collate_segments_to_batch, Dataset
-from envs import make_atari_env, WorldModelEnv
+from envs import make_atari_env, make_procgen_env, WorldModelEnv
 from game import ActionNames, DatasetEnv, Game, get_keymap_and_action_names, Keymap, NamedEnv, PlayEnv
-from utils import get_path_agent_ckpt, prompt_atari_game
+from utils import get_path_agent_ckpt, prompt_atari_game, prompt_procgen_game
 
 
 OmegaConf.register_new_resolver("eval", eval)
@@ -70,6 +70,8 @@ def prepare_dataset_mode(cfg: DictConfig) -> Tuple[DatasetEnv, Keymap, ActionNam
 
 def prepare_play_mode(cfg: DictConfig, args: argparse.Namespace) -> Tuple[PlayEnv, Keymap, ActionNames]:
     # Checkpoint
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+
     if args.pretrained:
         if cfg.env == "atari":
             name = prompt_atari_game()
@@ -81,6 +83,10 @@ def prepare_play_mode(cfg: DictConfig, args: argparse.Namespace) -> Tuple[PlayEn
             cfg.env.train.id = cfg.env.test.id = f"{name}NoFrameskip-v4"
             cfg.world_model_env.horizon = 50
 
+            # Real envs
+            train_env = make_atari_env(num_envs=1, device=device, **cfg.env.train)
+            test_env = make_atari_env(num_envs=1, device=device, **cfg.env.test)
+
         elif cfg.env == "procgen":
             name = prompt_procgen_game()
             path_ckpt = download(f"procgen_100k/models/{name}.pt")
@@ -90,14 +96,13 @@ def prepare_play_mode(cfg: DictConfig, args: argparse.Namespace) -> Tuple[PlayEn
             cfg.env = OmegaConf.load(download("procgen_100k/config/env/procgen.yaml"))
             cfg.env.train.id = cfg.env.test.id = f"procgen-{name}-v0"
             cfg.world_model_env.horizon = 50
+
+            # Real envs
+            train_env = make_procgen_env(num_envs=1, device=device, **cfg.env.train)
+            test_env = make_procgen_env(num_envs=1, device=device, **cfg)
+                                        
     else:
         path_ckpt = get_path_agent_ckpt("checkpoints", epoch=-1)
-
-    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-
-    # Real envs
-    train_env = make_atari_env(num_envs=1, device=device, **cfg.env.train)
-    test_env = make_atari_env(num_envs=1, device=device, **cfg.env.test)
 
     # Models
     agent = Agent(instantiate(cfg.agent, num_actions=test_env.num_actions)).to(device).eval()
