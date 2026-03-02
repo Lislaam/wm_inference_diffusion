@@ -1,4 +1,5 @@
 # @package env
+name: atari
 env_type: Boxing
 
 train:

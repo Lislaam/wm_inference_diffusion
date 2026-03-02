@@ -1,4 +1,5 @@
 # @package env
+name: procgen
 env_type: Coinrun
 
 train:
