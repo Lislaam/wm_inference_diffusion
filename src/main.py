@@ -20,7 +20,6 @@ from utils import skip_if_run_is_over
 def main(cfg: DictConfig) -> None:
     # configs are composed now; resolve interpolations
     OmegaConf.resolve(cfg)
-    OmegaConf.register_new_resolver("eval", eval)
 
     print("env_type:", cfg.env.env_type)
     print("train.id:", cfg.env.train.id)
