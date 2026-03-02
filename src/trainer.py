@@ -16,7 +16,7 @@ import wandb
 from agent import Agent
 from coroutines.collector import make_collector, NumToCollect
 from data import BatchSampler, collate_segments_to_batch, Dataset, DatasetTraverser
-from envs import make_atari_env, WorldModelEnv
+from envs import make_atari_env, make_procgen_env, WorldModelEnv
 from utils import (
     broadcast_if_needed,
     build_ddp_wrapper,
@@ -97,8 +97,12 @@ class Trainer(StateDictMixin):
         self.test_dataset.load_from_default_path()
 
         if self._rank == 0:
-            train_env = make_atari_env(num_envs=cfg.collection.train.num_envs, device=self._device, **cfg.env.train)
-            test_env = make_atari_env(num_envs=cfg.collection.test.num_envs, device=self._device, **cfg.env.test)
+            if self._cfg.env.name == "atari":
+                train_env = make_atari_env(num_envs=cfg.collection.train.num_envs, device=self._device, **cfg.env.train)
+                test_env = make_atari_env(num_envs=cfg.collection.test.num_envs, device=self._device, **cfg.env.test)
+            elif self._cfg.env.name == "procgen":
+                train_env = make_procgen_env(num_envs=cfg.collection.train.num_envs, device=self._device, **cfg.env.train)
+                test_env = make_procgen_env(num_envs=cfg.collection.test.num_envs, device=self._device, **cfg.env.test)
             num_actions = int(test_env.num_actions)
         else:
             num_actions = None
