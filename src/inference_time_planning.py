@@ -20,7 +20,7 @@ import wandb
 from agent import Agent
 from coroutines.collector import make_collector, NumToCollect
 from data import BatchSampler, collate_segments_to_batch, Dataset, DatasetTraverser
-from envs import make_atari_env, WorldModelEnv
+from envs import make_atari_env, make_procgen_env, WorldModelEnv
 from planning_rollout import multistep_planning
 
 from utils import (
@@ -90,7 +90,11 @@ class WMInference(StateDictMixin):
         self.train_dataset.load_from_default_path()
 
         # Real environment
-        self.env = make_atari_env(num_envs=self._cfg.collection.test.num_envs, seed=self.seed, device=self._device, **self._cfg.env.test)
+        if self._cfg.env.name == "atari":
+            self.env = make_atari_env(num_envs=self._cfg.collection.test.num_envs, seed=self.seed, device=self._device, **self._cfg.env.test)
+        elif self._cfg.env.name == "procgen":
+            self.env = make_procgen_env(num_envs=self._cfg.collection.test.num_envs, seed=self.seed, device=self._device, **self._cfg.env.test)
+            
         num_actions = int(self.env.num_actions)
         num_actions, = broadcast_if_needed(num_actions)
 
