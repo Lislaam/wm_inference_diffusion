@@ -17,7 +17,7 @@ wandb:
   notes: null
 
 initialization:
-  path_to_ckpt: /home/aguzel/wm_inference_diffusion/trained_models/${env.env_type}.pt   # if specified, will load the agent from this checkpoint
+  path_to_ckpt: null # /home/aguzel/wm_inference_diffusion/trained_models/${env.env_type}.pt   # if specified, will load the agent from this checkpoint
   load_denoiser: True
   load_rew_end_model: True
   load_actor_critic: True
