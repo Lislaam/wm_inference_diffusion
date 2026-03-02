@@ -186,18 +186,18 @@ class WMInference(StateDictMixin):
         wandb.define_metric("meta_planning_depth", step_metric="eval_step")
         wandb.define_metric("step_time", step_metric="eval_step")
 
-        # Evaluation
-        # start_time = time.time()
-        # self.eval_plain()
-        # if self._rank == 0:
-        #     wandb.log({"duration_plain": (time.time() - start_time)})
-
-        # Same env with WM planning
-        start_time = time.time()
-        self.eval_with_planning()
-        # Logging
-        if self._rank == 0:
-            wandb.log({"duration_with_planning": (time.time() - start_time)})
+        # Real-env smoke test path: skip world model if planning is disabled
+        # or if there is no dataset to initialize world-model buffers from.
+        if (self._cfg.evaluation.planning_steps == 0) or (len(self.train_dataset) == 0):
+            start_time = time.time()
+            self.eval_plain()
+            if self._rank == 0:
+                wandb.log({"duration_plain": (time.time() - start_time)})
+        else:
+            start_time = time.time()
+            self.eval_with_planning()
+            if self._rank == 0:
+                wandb.log({"duration_with_planning": (time.time() - start_time)})
 
         if dist.is_initialized():
             dist.barrier()
