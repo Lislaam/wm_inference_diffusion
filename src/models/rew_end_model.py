@@ -77,11 +77,12 @@ class RewEndModel(nn.Module):
         # Some sampled segments can contain only padding or a single valid frame,
         # which yields no valid transition targets after slicing with [:, :-1].
         if target_rew.numel() == 0:
-            zero = torch.tensor(0.0, device=obs.device)
+            # Keep a valid autograd path so backward() remains well-defined.
+            zero = (logits_rew.sum() + logits_end.sum()) * 0.0
             metrics = {
-                "loss_rew": zero,
-                "loss_end": zero,
-                "loss_total": zero,
+                "loss_rew": zero.detach(),
+                "loss_end": zero.detach(),
+                "loss_total": zero.detach(),
                 "confusion_matrix": {
                     "rew": torch.zeros((3, 3), dtype=torch.long, device=obs.device),
                     "end": torch.zeros((2, 2), dtype=torch.long, device=obs.device),
