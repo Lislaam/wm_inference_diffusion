@@ -15,6 +15,8 @@ from train_in_wm import TrainInWM
 from inference_time_planning import WMInference
 from utils import skip_if_run_is_over
 
+OmegaConf.register_new_resolver("eval", eval)
+
 
 @hydra.main(config_path="../config", config_name="trainer", version_base="1.3")
 def main(cfg: DictConfig) -> None:
