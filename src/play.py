@@ -99,7 +99,7 @@ def prepare_play_mode(cfg: DictConfig, args: argparse.Namespace) -> Tuple[PlayEn
 
             # Real envs
             train_env = make_procgen_env(num_envs=1, device=device, **cfg.env.train)
-            test_env = make_procgen_env(num_envs=1, device=device, **cfg)
+            test_env = make_procgen_env(num_envs=1, device=device, **cfg.env.test)
                                         
     else:
         path_ckpt = get_path_agent_ckpt("checkpoints", epoch=-1)

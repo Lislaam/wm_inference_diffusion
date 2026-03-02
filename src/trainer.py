@@ -103,6 +103,8 @@ class Trainer(StateDictMixin):
             elif self._cfg.env.name == "procgen":
                 train_env = make_procgen_env(num_envs=cfg.collection.train.num_envs, device=self._device, **cfg.env.train)
                 test_env = make_procgen_env(num_envs=cfg.collection.test.num_envs, device=self._device, **cfg.env.test)
+            else:
+                raise ValueError(f"Unsupported env.name '{self._cfg.env.name}'. Expected 'atari' or 'procgen'.")
             num_actions = int(test_env.num_actions)
         else:
             num_actions = None
@@ -172,7 +174,16 @@ class Trainer(StateDictMixin):
         # RL env
 
         if self._is_model_free:
-            rl_env = make_atari_env(num_envs=cfg.actor_critic.training.batch_size, device=self._device, **cfg.env.train)
+            if self._cfg.env.name == "atari":
+                rl_env = make_atari_env(
+                    num_envs=cfg.actor_critic.training.batch_size, device=self._device, **cfg.env.train
+                )
+            elif self._cfg.env.name == "procgen":
+                rl_env = make_procgen_env(
+                    num_envs=cfg.actor_critic.training.batch_size, device=self._device, **cfg.env.train
+                )
+            else:
+                raise ValueError(f"Unsupported env.name '{self._cfg.env.name}'. Expected 'atari' or 'procgen'.")
 
         else:
             c = cfg.actor_critic.training
