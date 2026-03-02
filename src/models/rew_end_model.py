@@ -74,6 +74,21 @@ class RewEndModel(nn.Module):
         target_rew = rew[mask].sign().long().add(1)  # clipped to {-1, 0, 1}
         target_end = end[mask]
 
+        # Some sampled segments can contain only padding or a single valid frame,
+        # which yields no valid transition targets after slicing with [:, :-1].
+        if target_rew.numel() == 0:
+            zero = torch.tensor(0.0, device=obs.device)
+            metrics = {
+                "loss_rew": zero,
+                "loss_end": zero,
+                "loss_total": zero,
+                "confusion_matrix": {
+                    "rew": torch.zeros((3, 3), dtype=torch.long, device=obs.device),
+                    "end": torch.zeros((2, 2), dtype=torch.long, device=obs.device),
+                },
+            }
+            return zero, metrics
+
         loss_rew = F.cross_entropy(logits_rew, target_rew)
         loss_end = F.cross_entropy(logits_end, target_end)
         loss = loss_rew + loss_end
