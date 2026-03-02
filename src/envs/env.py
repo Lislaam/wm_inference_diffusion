@@ -106,19 +106,24 @@ def make_procgen_env(
     num_levels: int = 200,
     start_level: int = 0,
     max_episode_steps: Optional[int] = 1000,
+    seed: Optional[int] = None,
+    done_on_life_loss: Optional[bool] = None,
+    **_: Any,
 ) -> "TorchProcgenEnv":
     """
     Create a vectorized Procgen environment (num_envs copies), then wrap it to
     return PyTorch tensors in NCHW format, normalized to [-1, 1].
     """
     # Create a single ProcgenEnv that is already vectorized to `num_envs`.
+    env_name = _extract_procgen_env_name(id)
     env = ProcgenEnv(
         num_envs=num_envs,
-        env_name=id,
+        env_name=env_name,
         distribution_mode=distribution_mode,
         render_mode=render_mode,
         num_levels=num_levels,
         start_level=start_level,
+        rand_seed=0 if seed is None else seed,
                 )
     # if max_episode_steps is not None:
     #     from gym.wrappers import TimeLimit  # or gymnasium.wrappers.TimeLimit if using Gymnasium
@@ -139,6 +144,19 @@ def make_procgen_env(
 
     # Wrap it in a TorchProcgenEnv to handle PyTorch transformation.
     return TorchProcgenEnv(env, device, size=size)
+
+
+def _extract_procgen_env_name(id_: str) -> str:
+    """
+    Supported forms:
+      - coinrun
+      - procgen-coinrun-v0
+      - procgen:procgen-coinrun-v0
+    """
+    normalized = id_.split(":", 1)[-1]
+    if normalized.startswith("procgen-") and normalized.endswith("-v0"):
+        normalized = normalized[len("procgen-") : -len("-v0")]
+    return normalized.lower()
 
 
 class TorchProcgenEnv(gymnasium.Wrapper):

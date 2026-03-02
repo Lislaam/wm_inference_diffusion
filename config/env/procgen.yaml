@@ -3,7 +3,7 @@ name: procgen
 env_type: Coinrun
 
 train:
-  id: $procgen-{env.env_type}-v0
+  id: procgen-${env.env_type}-v0
   done_on_life_loss: true
   size: 64
   max_episode_steps: null
