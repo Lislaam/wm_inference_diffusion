@@ -3,8 +3,8 @@
 set -euo pipefail
 trap "echo 'Script interrupted'; exit 1" INT
 
-source ~/miniconda3/etc/profile.d/conda.sh
-conda activate diffusion
+# source ~/miniconda3/etc/profile.d/conda.sh # Must already have activated env
+# conda activate diffusion
 cd ~/wm_inference_diffusion
 
 export WANDB_MODE=online
