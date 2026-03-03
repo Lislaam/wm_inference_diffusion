@@ -185,6 +185,8 @@ class WMInference(StateDictMixin):
         wandb.define_metric("wm_obs_sequence", step_metric="eval_step")
         wandb.define_metric("meta_planning_depth", step_metric="eval_step")
         wandb.define_metric("step_time", step_metric="eval_step")
+        wandb.define_metric("episode_length", step_metric="eval_step")
+
 
         # Real-env smoke test path: skip world model if planning is disabled
         # or if there is no dataset to initialize world-model buffers from.
@@ -526,7 +528,8 @@ class WMInference(StateDictMixin):
             "actor_critic/eval/planned_entropy_std": std_entropy,
             "actor_critic/eval/planned_td_error_mean": mean_td_error,
             "actor_critic/eval/planned_td_error_std": std_td_error,
-            "actor_critic/eval/num_planning_steps": plan_count
+            "actor_critic/eval/num_planning_steps": plan_count,
+            "actor_critic/eval/episode_length": step
         })
 
         return None
