@@ -52,7 +52,7 @@ static_dataset:
   ignore_sample_weights: True
 
 training:
-  should: True
+  should: False
   num_final_epochs: 1
   cache_in_ram: True
   num_workers_data_loaders: 0
@@ -61,12 +61,12 @@ training:
   agent_in_wm: True # if True, the agent is trained in the pretrained world model 
 
 evaluation:
-  should: False # False for collect data for now
+  should: True # False for collect data for now
   every: 10
   planning_steps: 5
-  entropy_threshold: 2
+  entropy_threshold: 0
   inner_planning_steps: 0 # Number of steps to plan in the inner (meta-planning) loop
-  planning_depth: 2 # Maximum depth of the planning tree
+  planning_depth: 1 # Maximum depth of the planning tree
   planning_mode: value # reward, value, or td
 
 world_model_env:
