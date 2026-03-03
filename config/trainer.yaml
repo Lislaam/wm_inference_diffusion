@@ -48,7 +48,7 @@ collection:
     num_final_episodes: 100
 
 static_dataset:
-  path: null  # if specified, will disable train/test data collection
+  path: /home/aguzel/wm_inference_diffusion/wm_procgen/no_train_coinrun  # if specified, will disable train/test data collection
   ignore_sample_weights: True
 
 training:
