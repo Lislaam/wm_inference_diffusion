@@ -85,7 +85,7 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
                     max_depth < cfg.evaluation.planning_depth
                 )
 
-                if entropy > cfg.evaluation.entropy_threshold:
+                if (np.random.uniform() < cfg.evaluation.planning_percentage):
                     if need_inner:
                         inner_update = inner_planning(
                             agent, world_model_env, num_actions,
@@ -230,7 +230,7 @@ def inner_planning(agent, world_model_env, num_actions, obs_buffer, act_buffer, 
             entropy = dist.entropy().detach().cpu().item() / math.log(2)
             latest_entropies[a] = entropy  # Store latest entropy for this action
 
-            if entropy > cfg.evaluation.entropy_threshold and depth < max_depth and remaining_steps - i - 1 > 0:
+            if (np.random.uniform() < cfg.evaluation.planning_percentage) and depth < max_depth and remaining_steps - i - 1 > 0:
                 act_buf[:, -1], latest_entropies[a], depth = inner_planning(agent, world_model_env, num_actions, obs_buf, act_buf, 
                                                         wm_hx_a.clone(), wm_cx_a.clone(), agent_hx_a.clone(), agent_cx_a.clone(), 
                                                         cfg, depth + 1, max_depth=max_depth, 
