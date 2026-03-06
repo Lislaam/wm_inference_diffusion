@@ -11,7 +11,7 @@ wandb:
   mode: online
   project: world_models
   entity: null
-  name: ${env.env_type}_${evaluation.planning_steps}_roll_${evaluation.inner_planning_steps}_inner_${evaluation.entropy_threshold}_ent_${evaluation.planning_depth}_max_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}
+  name: ${env.env_type}_${evaluation.planning_steps}_roll_${evaluation.inner_planning_steps}_inner_${evaluation.planning_percentage}_pct_${evaluation.planning_depth}_max_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}
   group: null
   tags: null
   notes: null
@@ -64,7 +64,7 @@ evaluation:
   should: True # False for collect data for now
   every: 10
   planning_steps: 5
-  entropy_threshold: 0
+  planning_percentage: 0.1 # Probability of taking a planning step after conditioning warmup
   inner_planning_steps: 0 # Number of steps to plan in the inner (meta-planning) loop
   planning_depth: 1 # Maximum depth of the planning tree
   planning_mode: value # reward, value, or td

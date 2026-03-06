@@ -56,17 +56,41 @@ run_experiment() {
 # MAIN LOOP
 # -------------------------------------------------------
 for env_type in Coinrun; do
-  for planning_steps in 0; do
-    for inner_planning_steps in 1; do
-      for entropy_threshold in 0; do
+  for planning_steps in 5 10; do
+    for inner_planning_steps in 0; do
+      for planning_percentage in 0.05 0.1 0.2 0.5; do
         for planning_mode in value reward; do
-          for seed in 0 1 2 3 4 5 6 7 8 9; do
+          for seed in 0 1 2; do
 
             run_experiment \
               env.env_type="$env_type" \
               evaluation.planning_steps="$planning_steps" \
               evaluation.inner_planning_steps="$inner_planning_steps" \
-              evaluation.entropy_threshold="$entropy_threshold" \
+              evaluation.planning_percentage="$planning_percentage" \
+              evaluation.planning_mode="$planning_mode" \
+              evaluation.planning_depth=1 \
+              common.seed="$seed" \
+              wandb.mode=online
+
+          done
+        done
+      done
+    done
+  done
+done
+
+for env_type in Coinrun; do
+  for planning_steps in 5 10; do
+    for inner_planning_steps in 5; do
+      for planning_percentage in 0.05 0.1 0.2 0.5; do
+        for planning_mode in value reward; do
+          for seed in 0 1 2; do
+
+            run_experiment \
+              env.env_type="$env_type" \
+              evaluation.planning_steps="$planning_steps" \
+              evaluation.inner_planning_steps="$inner_planning_steps" \
+              evaluation.planning_percentage="$planning_percentage" \
               evaluation.planning_mode="$planning_mode" \
               evaluation.planning_depth=2 \
               common.seed="$seed" \
