@@ -315,6 +315,7 @@ class WMInference(StateDictMixin):
             "actor_critic/eval/value_std": std_value,
             "actor_critic/eval/td_error_mean": mean_td_error,
             "actor_critic/eval/td_error_std": std_td_error,
+            "actor_critic/eval/episode_length": step
         })
 
         return None
