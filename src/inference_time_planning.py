@@ -188,14 +188,18 @@ class WMInference(StateDictMixin):
         wandb.define_metric("episode_length", step_metric="eval_step")
 
 
-        # Real-env smoke test path: skip world model if planning is disabled
-        # or if there is no dataset to initialize world-model buffers from.
-        if (self._cfg.evaluation.planning_steps == 0) or (len(self.train_dataset) == 0):
+        # Real-env smoke test path: skip world model if planning is disabled.
+        if self._cfg.evaluation.planning_steps == 0:
             start_time = time.time()
             self.eval_plain()
             if self._rank == 0:
                 wandb.log({"duration_plain": (time.time() - start_time)})
         else:
+            if len(self.train_dataset) == 0:
+                raise RuntimeError(
+                    "Planning requested (evaluation.planning_steps > 0) but train dataset is empty. "
+                    "Check static_dataset.path and ensure <path>/train/info.pt exists."
+                )
             start_time = time.time()
             self.eval_with_planning()
             if self._rank == 0:
@@ -502,7 +506,7 @@ class WMInference(StateDictMixin):
                 # Log the step
                 wandb.log({
                     "eval_step": step,
-                    "planning_flag": planning_flag,
+                    "actor_critic/eval/planning_flag": planning_flag,
                     "actor_critic/eval/planned_value": value,
                     "actor_critic/eval/planned_td_error": td_error.item(),
                     "actor_critic/eval/planned_step_reward": rewards.item(),

@@ -28,7 +28,7 @@ common:
   resume: False # do not modify, set by scripts/resume.sh only.
 
 checkpointing:
-  save_agent_every: 100
+  save_agent_every: 1000000
   num_to_keep: null  # number of checkpoints to keep, use null to disable
 
 collection:
