@@ -95,11 +95,7 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
                             cfg, depths[a]+1, max_depth=max_depth,
                             remaining_steps=cfg.evaluation.planning_steps - i - 1
                         )
-                        if inner_update[1] < cfg.evaluation.entropy_threshold:
-                            act_buffer[:, -1], latest_entropies[a], depths[a] = inner_update
-                        else: # Inner selection action was too high entropy
-                            rollout_valid = False
-                            break
+                        act_buffer[:, -1], latest_entropies[a], depths[a] = inner_update
                     else:
                         rollout_valid = False
                         break
