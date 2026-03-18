@@ -56,8 +56,8 @@ run_experiment() {
 # MAIN LOOP
 # -------------------------------------------------------
 
-for env_type in ; do
-  python src/main.py env.env_type==Jumper
+for env_type in CoinRun StarPilot CaveFlyer Dodgeball FruitBot Chaser Miner Jumper Leaper Maze BigFish Heist Climber Plunder Ninja BossFight; do
+  python src/main.py env.env_type="$env_type" common.seed=0
 done
 
 
