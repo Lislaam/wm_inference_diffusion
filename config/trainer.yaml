@@ -111,7 +111,7 @@ denoiser:
 
 rew_end_model:
   training:
-    seq_length: ${eval:'${world_model_env.horizon} + ${agent.denoiser.inner_model.num_steps_conditioning}'}
+    seq_length: 19 #${world_model_env.horizon} + ${agent.denoiser.inner_model.num_steps_conditioning}
     start_after_epochs: 0
     steps_first_epoch: 10000
     steps_per_epoch: 400
