@@ -1,5 +1,5 @@
 defaults:
-  - env: atari      # load environment config first
+  - env: procgen      # load environment config first
   - agent: default
   - _self_  
 
