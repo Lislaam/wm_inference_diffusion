@@ -52,7 +52,7 @@ static_dataset:
   ignore_sample_weights: True
 
 training:
-  should: False
+  should: True
   num_final_epochs: 1
   cache_in_ram: True
   num_workers_data_loaders: 0
@@ -61,7 +61,7 @@ training:
   agent_in_wm: True # if True, the agent is trained in the pretrained world model 
 
 evaluation:
-  should: True # False for collect data for now
+  should: False # False for collect data for now
   every: 10
   planning_steps: 5
   planning_percentage: 0.1 # Probability of taking a planning step after conditioning warmup
