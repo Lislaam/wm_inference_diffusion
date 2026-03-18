@@ -45,7 +45,7 @@ class DatasetTraverser:
     def __init__(self, dataset, batch_num_samples: int, chunk_size: int) -> None:
         self.dataset = dataset
         self.batch_num_samples = batch_num_samples
-        self.chunk_size = chunk_size
+        self.chunk_size = int(chunk_size)
 
     def __len__(self):
         return math.ceil(
