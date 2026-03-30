@@ -56,14 +56,10 @@ class Agent(nn.Module):
         sd = {k: extract_state_dict(sd, k) for k in ("denoiser", "rew_end_model", "actor_critic")}
 
         #Debug 
-        ckpt_keys = list(sd["denoiser"].keys())
-        print("First checkpoint keys:")
-        for k in ckpt_keys[:20]:
-            print(k)
-
-        print("\nFirst model keys:")
-        for k in list(self.denoiser.state_dict().keys())[:20]:
-            print(k)
+        print(sd.keys())
+        print(type(sd["denoiser"]))
+        print(len(sd["denoiser"]))
+        print(sd["denoiser"])
 
         if load_denoiser:
             self.denoiser.load_state_dict(sd["denoiser"])
