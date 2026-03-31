@@ -17,7 +17,7 @@ wandb:
   notes: null
 
 initialization:
-  path_to_ckpt: /home/aguzel/wm_inference_diffusion/outputs/2026-03-18/18-11-44/trained_models/agent_versions/agent_epoch_00951.pt #/home/aguzel/wm_inference_diffusion/wm_procgen_models/${env.env_type}.pt   # if specified, will load the agent from this checkpoint
+  path_to_ckpt: /home/aguzel/wm_inference_diffusion/wm_procgen_models/${env.env_type}.pt   # if specified, will load the agent from this checkpoint
   load_denoiser: True
   load_rew_end_model: True
   load_actor_critic: True
