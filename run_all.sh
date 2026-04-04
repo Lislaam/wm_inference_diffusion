@@ -60,32 +60,32 @@ run_experiment() {
 #   python src/main.py env.env_type="$env_type" common.seed=0
 # done
 
-for env_type in CoinRun; do
-  for planning_steps in 0; do # No planning, baselines
-    for inner_planning_steps in 0; do # No inner planning
-      for planning_percentage in 0; do
-        for planning_mode in value; do
-          for seed in 0 1 2 3 4 5 6 7 8 9; do
+# for env_type in CoinRun; do
+#   for planning_steps in 0; do # No planning, baselines
+#     for inner_planning_steps in 0; do # No inner planning
+#       for planning_percentage in 0; do
+#         for planning_mode in value; do
+#           for seed in 0 1 2 3 4 5 6 7 8 9; do
 
-            run_experiment \
-              env.env_type="$env_type" \
-              evaluation.planning_steps="$planning_steps" \
-              evaluation.inner_planning_steps="$inner_planning_steps" \
-              evaluation.planning_percentage="$planning_percentage" \
-              evaluation.planning_mode="$planning_mode" \
-              evaluation.planning_depth=1 \
-              common.seed="$seed" \
-              wandb.mode=online
+#             run_experiment \
+#               env.env_type="$env_type" \
+#               evaluation.planning_steps="$planning_steps" \
+#               evaluation.inner_planning_steps="$inner_planning_steps" \
+#               evaluation.planning_percentage="$planning_percentage" \
+#               evaluation.planning_mode="$planning_mode" \
+#               evaluation.planning_depth=1 \
+#               common.seed="$seed" \
+#               wandb.mode=online
 
-          done
-        done
-      done
-    done
-  done
-done
+#           done
+#         done
+#       done
+#     done
+#   done
+# done
 
 
-for env_type in StarPilot CaveFlyer Dodgeball FruitBot Chaser Miner Jumper Leaper Maze BigFish Heist Climber Plunder Ninja BossFight; do
+for env_type in CoinRun; do #StarPilot CaveFlyer Dodgeball FruitBot Chaser Miner Jumper Leaper Maze BigFish Heist Climber Plunder Ninja BossFight; do
   for planning_steps in 5 10; do
     for inner_planning_steps in 0; do # No inner planning
       for planning_percentage in 0.05 0.1 0.2 0.5; do
