@@ -365,8 +365,10 @@ class WMInference(StateDictMixin):
                     or (self._cfg.evaluation.planning_steps == 0)
                 )
 
-                if use_real_step:
-                    planning_flag = 0
+                if use_real_step or (not use_real_step and self._cfg.evaluation.planning_mode == "random"):
+                    actions = actions if use_real_step else torch.randint(0, self.env.num_actions, (env.num_envs,), device=self._device)
+
+                    planning_flag = 0 if use_real_step else 1
                     depth = 0
                     obs, rewards, terminated, truncated, infos = env.step(actions)
                     done = terminated | truncated
