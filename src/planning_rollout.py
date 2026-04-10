@@ -85,22 +85,22 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
                     max_depth < cfg.evaluation.planning_depth
                 )
 
-                if (np.random.uniform() < cfg.evaluation.planning_percentage):
-                    if need_inner:
-                        inner_update = inner_planning(
-                            agent, world_model_env, num_actions,
-                            obs_buffer, act_buffer,
-                            wm_hx.clone(), wm_cx.clone(),
-                            agent_hx.clone(), agent_cx.clone(),
-                            cfg, depths[a]+1, max_depth=max_depth,
-                            remaining_steps=cfg.evaluation.planning_steps - i - 1
-                        )
-                        act_buffer[:, -1], latest_entropies[a], depths[a] = inner_update
-                    else:
-                        rollout_valid = False
-                        break
-                else:
-                    act_buffer[:, -1] = dist.sample()
+                # if (np.random.uniform() < cfg.evaluation.planning_percentage):
+                #     if need_inner:
+                #         inner_update = inner_planning(
+                #             agent, world_model_env, num_actions,
+                #             obs_buffer, act_buffer,
+                #             wm_hx.clone(), wm_cx.clone(),
+                #             agent_hx.clone(), agent_cx.clone(),
+                #             cfg, depths[a]+1, max_depth=max_depth,
+                #             remaining_steps=cfg.evaluation.planning_steps - i - 1
+                #         )
+                #         act_buffer[:, -1], latest_entropies[a], depths[a] = inner_update
+                #     else:
+                #         rollout_valid = False
+                #         break
+                # else:
+                act_buffer[:, -1] = dist.sample()
 
                 # Logging
                 wm_predicted_obs[a].append(next_obs.squeeze())
@@ -178,6 +178,8 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
 def inner_planning(agent, world_model_env, num_actions, obs_buffer, act_buffer, wm_hx, wm_cx, agent_hx, agent_cx,
                    cfg, depth, max_depth, remaining_steps):
     """
+    **** DEPRICATED ****
+    
     Perform planning *within* a rollout when entropy is high.
     Returns the selected next action based on imagination from current buffer state.
     This avoids overwriting or re-cloning buffers from real env.
