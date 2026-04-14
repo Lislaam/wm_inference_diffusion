@@ -89,7 +89,7 @@ for env_type in CoinRun StarPilot CaveFlyer Dodgeball FruitBot Chaser Miner Jump
   for planning_steps in 5; do
     for inner_planning_steps in 0; do # No inner planning
       for planning_percentage in 1; do
-        for planning_mode in value reward; do
+        for planning_mode in random; do
           for seed in 0 1 2 3 4 5 6 7 8 9; do
 
             run_experiment \
