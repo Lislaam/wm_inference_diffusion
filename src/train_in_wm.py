@@ -99,8 +99,10 @@ class TrainInWM(StateDictMixin):
         self.test_dataset.load_from_default_path()
 
         if self._rank == 0:
-            # train_env = make_atari_env(num_envs=cfg.collection.train.num_envs, device=self._device, **cfg.env.train)
-            test_env = make_atari_env(num_envs=cfg.collection.test.num_envs, device=self._device, **cfg.env.test) # Want to eval in real environment
+            if self._cfg.env.name == "atari":
+                test_env = make_atari_env(num_envs=cfg.collection.test.num_envs, device=self._device, **cfg.env.test)
+            else:
+                raise ValueError(f"Unsupported env.name '{self._cfg.env.name}'. Expected 'atari'.")
             num_actions = int(test_env.num_actions)
         else:
             num_actions = None
@@ -341,7 +343,7 @@ class TrainInWM(StateDictMixin):
                 dist = Categorical(logits=logits)
                 actions = dist.sample()
                 probs = dist.probs.detach().cpu()
-                entropies = dist.entropy().detach().cpu() # One entry
+                entropies = dist.entropy().detach().cpu()
 
                 all_probs.append(probs)
 
@@ -354,7 +356,7 @@ class TrainInWM(StateDictMixin):
                     "actor_critic/eval/step_reward": rewards.item(),
                     "actor_critic/eval/cumulative_reward": sum(episode_rewards),
                     "actor_critic/eval/policy_entropy": entropies.item() / math.log(2),
-                    "actor_critic/eval/mean_action_distribution": wandb.Histogram(probs.mean(dim=0).numpy()), # ACtually probs.mean is the same as probs at dim 0
+                    "actor_critic/eval/mean_action_distribution": wandb.Histogram(probs.mean(dim=0).numpy()),
                 })
 
         # Final summary stats

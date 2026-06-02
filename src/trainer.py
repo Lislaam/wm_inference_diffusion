@@ -3,12 +3,14 @@ from pathlib import Path
 import shutil
 import time
 from typing import List, Optional, Tuple
+import math
 
 from hydra.utils import instantiate
 import numpy as np
 from omegaconf import DictConfig, OmegaConf
 import torch
 import torch.distributed as dist
+from torch.distributions.categorical import Categorical
 from torch.utils.data import DataLoader
 from tqdm import tqdm, trange
 import wandb
@@ -137,6 +139,8 @@ class Trainer(StateDictMixin):
             return get_lr_sched(self.opt.get(name), getattr(cfg, name).training.lr_warmup_steps)
 
         self._model_names = ["denoiser", "rew_end_model", "actor_critic"]
+        if self._rank == 0:
+            self._define_wandb_metrics()
         self.opt = CommonTools(*map(build_opt, self._model_names))
         self.lr_sched = CommonTools(*map(build_lr_sched, self._model_names))
 
@@ -208,6 +212,7 @@ class Trainer(StateDictMixin):
         self.num_episodes_test = 0
         self.num_batch_train = CommonTools(0, 0, 0)
         self.num_batch_test = CommonTools(0, 0, 0)
+        self.num_update_train = CommonTools(0, 0, 0)
 
         if cfg.common.resume:
             self.load_state_checkpoint()
@@ -219,6 +224,114 @@ class Trainer(StateDictMixin):
                 print(f"{count_parameters(getattr(self.agent, name))} parameters in {name}")
             print(self.train_dataset)
             print(self.test_dataset)
+
+    def _define_wandb_metrics(self) -> None:
+        for name in self._model_names:
+            wandb.define_metric(f"{name}/train_step")
+            wandb.define_metric(f"{name}/train/*", step_metric=f"{name}/train_step")
+        wandb.define_metric("actor_critic/real_eval/*", step_metric="actor_critic/train_step")
+        wandb.define_metric("actor_critic/final_real_eval/*", step_metric="actor_critic/train_step")
+
+    def _make_real_eval_env(self):
+        if self._cfg.env.name == "atari":
+            return make_atari_env(
+                num_envs=self._cfg.collection.test.num_envs,
+                device=self._device,
+                **self._cfg.env.test,
+            )
+        if self._cfg.env.name == "procgen":
+            return make_procgen_env(
+                num_envs=self._cfg.collection.test.num_envs,
+                device=self._device,
+                **self._cfg.env.test,
+            )
+        raise ValueError(f"Unsupported env.name '{self._cfg.env.name}'. Expected 'atari' or 'procgen'.")
+
+    def _should_run_real_eval(self, name: str, train_step: int) -> bool:
+        real_eval_cfg = getattr(self._cfg.evaluation, "real_env", None)
+        return (
+            name == "actor_critic"
+            and self._rank == 0
+            and real_eval_cfg is not None
+            and real_eval_cfg.should
+            and train_step > 0
+            and train_step % real_eval_cfg.every_steps == 0
+        )
+
+    @torch.no_grad()
+    def _run_real_env_rollout(
+        self,
+        train_step: int,
+        num_episodes: int,
+        metric_prefix: str,
+    ) -> Logs:
+        real_eval_cfg = self._cfg.evaluation.real_env
+        env = self._make_real_eval_env()
+
+        obs = env.reset()[0]
+        batch_size = env.num_envs
+        hx = torch.zeros(batch_size, self.agent.actor_critic.lstm_dim, device=self._device)
+        cx = torch.zeros(batch_size, self.agent.actor_critic.lstm_dim, device=self._device)
+        returns = torch.zeros(batch_size, device=self._device)
+        lengths = torch.zeros(batch_size, device=self._device)
+
+        completed_returns = []
+        completed_lengths = []
+        entropies = []
+
+        while len(completed_returns) < num_episodes:
+            logits, _, (hx, cx) = self.agent.actor_critic.predict_act_value(obs, (hx, cx))
+            dist = Categorical(logits=logits)
+            actions = dist.probs.argmax(dim=1) if real_eval_cfg.deterministic else dist.sample()
+
+            entropies.append((dist.entropy() / math.log(2)).mean().item())
+
+            obs, rewards, terminated, truncated, _ = env.step(actions)
+            done = (terminated | truncated).bool()
+
+            returns += rewards
+            lengths += 1
+
+            if done.any():
+                done_indices = done.nonzero(as_tuple=False).flatten()
+                for idx in done_indices.tolist():
+                    completed_returns.append(returns[idx].item())
+                    completed_lengths.append(lengths[idx].item())
+                    if len(completed_returns) >= num_episodes:
+                        break
+                returns[done] = 0
+                lengths[done] = 0
+                hx[done] = 0
+                cx[done] = 0
+
+        completed_returns = completed_returns[:num_episodes]
+        completed_lengths = completed_lengths[:num_episodes]
+
+        return [{
+            "actor_critic/train_step": train_step,
+            f"{metric_prefix}/return_mean": float(np.mean(completed_returns)),
+            f"{metric_prefix}/return_std": float(np.std(completed_returns)),
+            f"{metric_prefix}/episode_length_mean": float(np.mean(completed_lengths)),
+            f"{metric_prefix}/episode_length_std": float(np.std(completed_lengths)),
+            f"{metric_prefix}/policy_entropy_mean": float(np.mean(entropies)),
+            f"{metric_prefix}/num_episodes": num_episodes,
+        }]
+
+    @torch.no_grad()
+    def _run_real_env_validation(self, train_step: int) -> Logs:
+        return self._run_real_env_rollout(
+            train_step=train_step,
+            num_episodes=self._cfg.evaluation.real_env.num_episodes,
+            metric_prefix="actor_critic/real_eval",
+        )
+
+    @torch.no_grad()
+    def _run_final_real_env_test(self) -> Logs:
+        return self._run_real_env_rollout(
+            train_step=self.num_update_train.get("actor_critic"),
+            num_episodes=self._cfg.collection.test.num_final_episodes,
+            metric_prefix="actor_critic/final_real_eval",
+        )
 
     def run(self) -> None:
         to_log = []
@@ -276,7 +389,11 @@ class Trainer(StateDictMixin):
             if dist.is_initialized():
                 dist.barrier()
 
-        # Last collect
+        # Final real-environment test
+        if self._rank == 0:
+            wandb_log(self._run_final_real_env_test(), self.epoch)
+
+        # Keep the collected held-out dataset for visualization/import when available.
         if self._rank == 0 and not self._is_static_dataset:
             wandb_log(self.collect_test(final=True), self.epoch)
 
@@ -379,6 +496,7 @@ class Trainer(StateDictMixin):
             batch = next(data_iterator).to(self._device) if data_iterator is not None else None
             loss, metrics = model(batch) if batch is not None else model()
             loss.backward()
+            metrics["train_step"] = self.num_update_train.get(name)
 
             num_batch = self.num_batch_train.get(name)
             metrics[f"num_batch_train_{name}"] = num_batch
@@ -392,14 +510,32 @@ class Trainer(StateDictMixin):
                 opt.step()
                 opt.zero_grad()
 
+                train_step = self.num_update_train.get(name) + 1
+                self.num_update_train.set(name, train_step)
+                metrics["train_step"] = train_step
+
                 if lr_sched is not None:
                     metrics["lr"] = lr_sched.get_last_lr()[0]
                     lr_sched.step()
 
+                if self._should_run_real_eval(name, train_step):
+                    to_log += self._run_real_env_validation(train_step)
+
             to_log.append(metrics)
 
         process_confusion_matrices_if_any_and_compute_classification_metrics(to_log)
-        to_log = [{f"{name}/train/{k}": v for k, v in d.items()} for d in to_log]
+        to_log = [
+            (
+                d
+                if any(k.startswith("actor_critic/real_eval/") for k in d)
+                else {
+                    f"{name}/train/{k}": v for k, v in d.items() if k != "train_step"
+                } | (
+                    {f"{name}/train_step": d["train_step"]} if "train_step" in d else {}
+                )
+            )
+            for d in to_log
+        ]
         return to_log
 
     @torch.no_grad()

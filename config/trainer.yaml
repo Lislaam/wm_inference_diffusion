@@ -11,13 +11,13 @@ wandb:
   mode: online
   project: world_models
   entity: null
-  name: ${env.env_type}_${evaluation.planning_steps}_roll_${evaluation.inner_planning_steps}_inner_${evaluation.planning_percentage}_pct_${evaluation.planning_depth}_max_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}
+  name: coinrun_wm_training_time_${now:%Y-%m-%d_%H-%M-%S} # ${env.env_type}_${evaluation.planning_steps}_roll_${evaluation.inner_planning_steps}_inner_${evaluation.planning_percentage}_pct_${evaluation.planning_depth}_max_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}
   group: null
   tags: null
   notes: null
 
 initialization:
-  path_to_ckpt: /home/aguzel/wm_inference_diffusion/wm_procgen_models/${env.env_type}.pt   # if specified, will load the agent from this checkpoint
+  path_to_ckpt: null # keep null to train a new world model from scratch
   load_denoiser: True
   load_rew_end_model: True
   load_actor_critic: True
@@ -35,10 +35,10 @@ collection:
   train:
     num_envs: 1
     epsilon: 0.01
-    num_steps_total: 200000000
+    num_steps_total: 1000 #200000000
     first_epoch:
-      min: 5000
-      max: 10000  # null: no maximum
+      min: 50 #5000
+      max: 100 #10000  # null: no maximum
       threshold_rew: 10
     steps_per_epoch: 100
   test:
@@ -48,21 +48,26 @@ collection:
     num_final_episodes: 100
 
 static_dataset:
-  path: /home/aguzel/wm_inference_diffusion/wm_procgen_datasets/${env.env_type}  # if specified, will disable train/test data collection
+  path: null  # keep null to collect fresh train/test data during training
   ignore_sample_weights: True
 
 training:
-  should: False
+  should: True
   num_final_epochs: 1
   cache_in_ram: True
   num_workers_data_loaders: 0
   model_free: False # if True, turn off world_model training and RL in imagination
   compile_wm: True
-  agent_in_wm: True # if True, the agent is trained in the pretrained world model 
+  agent_in_wm: False # keep False for the standard world-model training loop
 
 evaluation:
   should: True # False for collect data for now
   every: 10
+  real_env:
+    should: True
+    every_steps: 1000
+    num_episodes: 1
+    deterministic: False
   planning_steps: 0
   planning_percentage: 0 # Probability of taking a planning step after conditioning warmup
   inner_planning_steps: 0 # Number of steps to plan in the inner (meta-planning) loop
