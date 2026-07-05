@@ -37,7 +37,7 @@ collection:
     epsilon: 0.01
     num_steps_total: 1000 #200000000
     first_epoch:
-      min: 50 #5000
+      min: 100 #5000
       max: 100 #10000  # null: no maximum
       threshold_rew: 10
     steps_per_epoch: 100
@@ -45,7 +45,7 @@ collection:
     num_envs: 1
     num_episodes: 4
     epsilon: 0.0
-    num_final_episodes: 100
+    num_final_episodes: 1 #100
 
 static_dataset:
   path: null  # keep null to collect fresh train/test data during training
