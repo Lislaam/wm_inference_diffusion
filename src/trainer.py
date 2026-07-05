@@ -267,6 +267,7 @@ class Trainer(StateDictMixin):
     ) -> Logs:
         real_eval_cfg = self._cfg.evaluation.real_env
         env = self._make_real_eval_env()
+        max_episode_steps = getattr(real_eval_cfg, "max_episode_steps", None)
 
         obs = env.reset()[0]
         batch_size = env.num_envs
@@ -292,6 +293,9 @@ class Trainer(StateDictMixin):
             returns += rewards
             lengths += 1
 
+            if max_episode_steps is not None:
+                done = done | (lengths >= max_episode_steps)
+
             if done.any():
                 done_indices = done.nonzero(as_tuple=False).flatten()
                 for idx in done_indices.tolist():
@@ -303,6 +307,11 @@ class Trainer(StateDictMixin):
                 lengths[done] = 0
                 hx[done] = 0
                 cx[done] = 0
+
+                # Validation/test runs use a single real environment in this repo config.
+                # Resetting here guarantees we can continue after an explicit step cap.
+                if env.num_envs == 1:
+                    obs = env.reset()[0]
 
         completed_returns = completed_returns[:num_episodes]
         completed_lengths = completed_lengths[:num_episodes]
@@ -519,7 +528,9 @@ class Trainer(StateDictMixin):
                     lr_sched.step()
 
                 if self._should_run_real_eval(name, train_step):
-                    to_log += self._run_real_env_validation(train_step)
+                    real_eval_logs = self._run_real_env_validation(train_step)
+                    if self._rank == 0:
+                        wandb_log(real_eval_logs, self.epoch)
 
             to_log.append(metrics)
 

@@ -68,6 +68,7 @@ evaluation:
     every_steps: 1000
     num_episodes: 1
     deterministic: False
+    max_episode_steps: 1000
   planning_steps: 0
   planning_percentage: 0 # Probability of taking a planning step after conditioning warmup
   inner_planning_steps: 0 # Number of steps to plan in the inner (meta-planning) loop
