@@ -1,6 +1,6 @@
 # @package env
 name: procgen
-env_type: Jumper
+env_type: Coinrun
 
 train:
   id: procgen-${env.env_type}-v0
