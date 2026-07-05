@@ -229,8 +229,10 @@ class Trainer(StateDictMixin):
         for name in self._model_names:
             wandb.define_metric(f"{name}/train_step")
             wandb.define_metric(f"{name}/train/*", step_metric=f"{name}/train_step")
-        wandb.define_metric("actor_critic/real_eval/*", step_metric="actor_critic/train_step")
-        wandb.define_metric("actor_critic/final_real_eval/*", step_metric="actor_critic/train_step")
+            wandb.define_metric(f"{name}/validation/*", step_metric="epoch")
+            wandb.define_metric(f"{name}/test/*", step_metric="epoch")
+        wandb.define_metric("actor_critic/validation/*", step_metric="actor_critic/train_step")
+        wandb.define_metric("actor_critic/test/*", step_metric="actor_critic/train_step")
 
     def _make_real_eval_env(self):
         if self._cfg.env.name == "atari":
@@ -331,7 +333,7 @@ class Trainer(StateDictMixin):
         return self._run_real_env_rollout(
             train_step=train_step,
             num_episodes=self._cfg.evaluation.real_env.num_episodes,
-            metric_prefix="actor_critic/real_eval",
+            metric_prefix="actor_critic/validation",
         )
 
     @torch.no_grad()
@@ -339,7 +341,7 @@ class Trainer(StateDictMixin):
         return self._run_real_env_rollout(
             train_step=self.num_update_train.get("actor_critic"),
             num_episodes=self._cfg.collection.test.num_final_episodes,
-            metric_prefix="actor_critic/final_real_eval",
+            metric_prefix="actor_critic/test",
         )
 
     def run(self) -> None:
@@ -538,7 +540,10 @@ class Trainer(StateDictMixin):
         to_log = [
             (
                 d
-                if any(k.startswith("actor_critic/real_eval/") for k in d)
+                if any(
+                    k.startswith("actor_critic/validation/") or k.startswith("actor_critic/test/")
+                    for k in d
+                )
                 else {
                     f"{name}/train/{k}": v for k, v in d.items() if k != "train_step"
                 } | (
@@ -564,7 +569,31 @@ class Trainer(StateDictMixin):
             to_log.append(metrics)
 
         process_confusion_matrices_if_any_and_compute_classification_metrics(to_log)
+        summary = {}
+        counts = {}
+        for d in to_log:
+            for k, v in d.items():
+                if k.startswith("num_batch_test_"):
+                    continue
+                if isinstance(v, torch.Tensor):
+                    if v.numel() != 1:
+                        continue
+                    v = v.item()
+                elif isinstance(v, np.generic):
+                    v = v.item()
+                elif not isinstance(v, (int, float)):
+                    continue
+                summary[k] = summary.get(k, 0.0) + float(v)
+                counts[k] = counts.get(k, 0) + 1
+
+        validation_log = {
+            f"{name}/validation/{k}": summary[k] / counts[k]
+            for k in summary
+            if counts[k] > 0
+        }
         to_log = [{f"{name}/test/{k}": v for k, v in d.items()} for d in to_log]
+        if validation_log:
+            to_log.append(validation_log)
         return to_log
 
     def load_state_checkpoint(self) -> None:
