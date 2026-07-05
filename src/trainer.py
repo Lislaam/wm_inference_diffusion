@@ -347,7 +347,6 @@ class Trainer(StateDictMixin):
 
     def run(self) -> None:
         to_log = []
-        epochs_per_rollout = self._cfg.collection.train.get("epochs_per_rollout", 1)
 
         if self.epoch == 0:
             if self._is_model_free or self._is_static_dataset:
@@ -369,13 +368,7 @@ class Trainer(StateDictMixin):
                 print(f"\nEpoch {self.epoch} / {num_epochs}\n")
 
             # Training
-            should_collect_train = (
-                self._rank == 0
-                and not self._is_model_free
-                and not self._is_static_dataset
-                and self.epoch <= self.num_epochs_collect
-                and ((self.epoch - 1) % epochs_per_rollout == 0)
-            )
+            should_collect_train = (self._rank == 0 and not self._is_model_free and not self._is_static_dataset and self.epoch <= self.num_epochs_collect)
 
             if should_collect_train:
                 c = self._cfg.collection.train
@@ -422,11 +415,9 @@ class Trainer(StateDictMixin):
         c = self._cfg.collection.train
         min_steps = c.first_epoch.min
         steps_per_epoch = c.steps_per_epoch
-        epochs_per_rollout = c.get("epochs_per_rollout", 1)
         max_steps = c.first_epoch.max
         threshold_rew = c.first_epoch.threshold_rew
         assert min_steps % steps_per_epoch == 0
-        assert epochs_per_rollout > 0
 
         steps = min_steps
         while True:
@@ -447,8 +438,7 @@ class Trainer(StateDictMixin):
 
         remaining_steps = c.num_steps_total - num_steps
         assert remaining_steps % c.steps_per_epoch == 0
-        num_rollouts_collect = remaining_steps // c.steps_per_epoch
-        num_epochs_collect = num_rollouts_collect * epochs_per_rollout
+        num_epochs_collect = remaining_steps // c.steps_per_epoch
 
         return num_epochs_collect, to_log
 

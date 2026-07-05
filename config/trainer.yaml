@@ -41,7 +41,6 @@ collection:
       max: 256  # null: no maximum
       threshold_rew: 10
     steps_per_epoch: 256
-    epochs_per_rollout: 3
   test:
     num_envs: 1
     num_episodes: 4
