@@ -229,6 +229,7 @@ class Trainer(StateDictMixin):
         for name in self._model_names:
             wandb.define_metric(f"{name}/train_step")
             wandb.define_metric(f"{name}/train/*", step_metric=f"{name}/train_step")
+            wandb.define_metric(f"{name}/train_epoch/*", step_metric="epoch")
             wandb.define_metric(f"{name}/validation/*", step_metric="epoch")
             wandb.define_metric(f"{name}/test/*", step_metric="epoch")
         wandb.define_metric("actor_critic/validation/*", step_metric="actor_critic/train_step")
@@ -346,6 +347,7 @@ class Trainer(StateDictMixin):
 
     def run(self) -> None:
         to_log = []
+        epochs_per_rollout = self._cfg.collection.train.get("epochs_per_rollout", 1)
 
         if self.epoch == 0:
             if self._is_model_free or self._is_static_dataset:
@@ -367,7 +369,13 @@ class Trainer(StateDictMixin):
                 print(f"\nEpoch {self.epoch} / {num_epochs}\n")
 
             # Training
-            should_collect_train = (self._rank == 0 and not self._is_model_free and not self._is_static_dataset and self.epoch <= self.num_epochs_collect)
+            should_collect_train = (
+                self._rank == 0
+                and not self._is_model_free
+                and not self._is_static_dataset
+                and self.epoch <= self.num_epochs_collect
+                and ((self.epoch - 1) % epochs_per_rollout == 0)
+            )
 
             if should_collect_train:
                 c = self._cfg.collection.train
@@ -414,9 +422,11 @@ class Trainer(StateDictMixin):
         c = self._cfg.collection.train
         min_steps = c.first_epoch.min
         steps_per_epoch = c.steps_per_epoch
+        epochs_per_rollout = c.get("epochs_per_rollout", 1)
         max_steps = c.first_epoch.max
         threshold_rew = c.first_epoch.threshold_rew
         assert min_steps % steps_per_epoch == 0
+        assert epochs_per_rollout > 0
 
         steps = min_steps
         while True:
@@ -437,7 +447,8 @@ class Trainer(StateDictMixin):
 
         remaining_steps = c.num_steps_total - num_steps
         assert remaining_steps % c.steps_per_epoch == 0
-        num_epochs_collect = remaining_steps // c.steps_per_epoch
+        num_rollouts_collect = remaining_steps // c.steps_per_epoch
+        num_epochs_collect = num_rollouts_collect * epochs_per_rollout
 
         return num_epochs_collect, to_log
 
@@ -537,6 +548,28 @@ class Trainer(StateDictMixin):
             to_log.append(metrics)
 
         process_confusion_matrices_if_any_and_compute_classification_metrics(to_log)
+        summary = {}
+        counts = {}
+        for d in to_log:
+            for k, v in d.items():
+                if k == "train_step" or k.startswith("num_batch_train_") or k.startswith("actor_critic/"):
+                    continue
+                if isinstance(v, torch.Tensor):
+                    if v.numel() != 1:
+                        continue
+                    v = v.item()
+                elif isinstance(v, np.generic):
+                    v = v.item()
+                elif not isinstance(v, (int, float)):
+                    continue
+                summary[k] = summary.get(k, 0.0) + float(v)
+                counts[k] = counts.get(k, 0) + 1
+
+        train_epoch_log = {
+            f"{name}/train_epoch/{k}": summary[k] / counts[k]
+            for k in summary
+            if counts[k] > 0
+        }
         to_log = [
             (
                 d
@@ -552,6 +585,8 @@ class Trainer(StateDictMixin):
             )
             for d in to_log
         ]
+        if train_epoch_log:
+            to_log.append(train_epoch_log)
         return to_log
 
     @torch.no_grad()

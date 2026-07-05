@@ -6,12 +6,14 @@ train:
   id: procgen-${env.env_type}-v0
   done_on_life_loss: true
   size: 64
+  distribution_mode: hard
   max_episode_steps: null
 
 test:
   id: ${env.train.id}
   done_on_life_loss: false
   size: ${env.train.size}
+  distribution_mode: ${env.train.distribution_mode}
   max_episode_steps: null
 
 keymap: procgen/${env.train.id}
