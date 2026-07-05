@@ -28,7 +28,7 @@ common:
   resume: False # do not modify, set by scripts/resume.sh only.
 
 checkpointing:
-  save_agent_every: 100
+  save_agent_every: 10000
   num_to_keep: null  # number of checkpoints to keep, use null to disable
 
 collection:
@@ -37,8 +37,8 @@ collection:
     epsilon: 0.01
     num_steps_total: 200000000
     first_epoch:
-      min: 256
-      max: 256  # null: no maximum
+      min: 5000
+      max: 10000  # null: no maximum
       threshold_rew: 10
     steps_per_epoch: 256
   test:
