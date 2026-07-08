@@ -11,7 +11,7 @@ wandb:
   mode: online
   project: world_models
   entity: null
-  name: ${env.env_type}_wm_training_time_${now:%Y-%m-%d_%H-%M-%S}
+  name: ${env.env_type}_ac_model_free_training_time_${now:%Y-%m-%d_%H-%M-%S}
   group: null
   tags: null
   notes: null
@@ -28,7 +28,7 @@ common:
   resume: False # do not modify, set by scripts/resume.sh only.
 
 checkpointing:
-  save_agent_every: 10000
+  save_agent_every: 1000
   num_to_keep: null  # number of checkpoints to keep, use null to disable
 
 collection:
@@ -53,18 +53,17 @@ static_dataset:
 
 training:
   should: True
-  # Model-free training does not use collection.train.num_steps_total; with
-  # actor_critic_loss.backup_every=15 and batch_size=1 this is ~200M env steps.
-  num_final_epochs: 33322
+  max_env_steps: 200000000 # model-free only; set null when returning to normal world-model training
+  num_final_epochs: null # optional for model-free when max_env_steps is set
   cache_in_ram: True
   num_workers_data_loaders: 0
   model_free: True # if True, turn off world_model training and RL in imagination
-  compile_wm: True
+  compile_wm: False
   agent_in_wm: False # keep False for the standard world-model training loop
 
 evaluation:
   should: True # False for collect data for now
-  every: 10
+  every: 100
   real_env:
     should: True
     every_steps: 50000
@@ -139,6 +138,7 @@ actor_critic:
     sample_weights: ${denoiser.training.sample_weights}
     batch_size: 1
     grad_acc_steps: 1
+    log_every_updates: 1
     start_after_epochs: 0
     steps_first_epoch: 5000
     steps_per_epoch: 400

@@ -219,6 +219,7 @@ class Trainer(StateDictMixin):
         self.num_batch_train = CommonTools(0, 0, 0)
         self.num_batch_test = CommonTools(0, 0, 0)
         self.num_update_train = CommonTools(0, 0, 0)
+        self.num_env_steps_last_real_eval = 0
 
         if cfg.common.resume:
             self.load_state_checkpoint()
@@ -234,12 +235,33 @@ class Trainer(StateDictMixin):
     def _define_wandb_metrics(self) -> None:
         for name in self._model_names:
             wandb.define_metric(f"{name}/train_step")
-            wandb.define_metric(f"{name}/train/*", step_metric=f"{name}/train_step")
+            if name == "actor_critic":
+                wandb.define_metric("actor_critic/env_step")
+                wandb.define_metric("actor_critic/train/*", step_metric="actor_critic/env_step")
+            else:
+                wandb.define_metric(f"{name}/train/*", step_metric=f"{name}/train_step")
             wandb.define_metric(f"{name}/train_epoch/*", step_metric="epoch")
             wandb.define_metric(f"{name}/validation/*", step_metric="epoch")
             wandb.define_metric(f"{name}/test/*", step_metric="epoch")
-        wandb.define_metric("actor_critic/validation/*", step_metric="actor_critic/train_step")
-        wandb.define_metric("actor_critic/test/*", step_metric="actor_critic/train_step")
+        wandb.define_metric("actor_critic/validation/*", step_metric="actor_critic/env_step")
+        wandb.define_metric("actor_critic/test/*", step_metric="actor_critic/env_step")
+
+    def _actor_critic_env_steps_per_update(self) -> int:
+        c = self._cfg.actor_critic.training
+        return c.grad_acc_steps * c.batch_size * self._cfg.actor_critic.actor_critic_loss.backup_every
+
+    def _actor_critic_env_step(self) -> int:
+        c = self._cfg.actor_critic.training
+        return self.num_batch_train.actor_critic * c.batch_size * self._cfg.actor_critic.actor_critic_loss.backup_every
+
+    def _target_model_free_env_steps(self) -> Optional[int]:
+        if not self._is_model_free:
+            return None
+        return getattr(self._cfg.training, "max_env_steps", None) or self._cfg.collection.train.num_steps_total
+
+    def _model_free_training_is_done(self) -> bool:
+        target_env_steps = self._target_model_free_env_steps()
+        return target_env_steps is not None and self._actor_critic_env_step() >= target_env_steps
 
     def _make_real_eval_env(self):
         if self._cfg.env.name == "atari":
@@ -256,15 +278,15 @@ class Trainer(StateDictMixin):
             )
         raise ValueError(f"Unsupported env.name '{self._cfg.env.name}'. Expected 'atari' or 'procgen'.")
 
-    def _should_run_real_eval(self, name: str, train_step: int) -> bool:
+    def _should_run_real_eval(self, name: str) -> bool:
         real_eval_cfg = getattr(self._cfg.evaluation, "real_env", None)
         return (
             name == "actor_critic"
             and self._rank == 0
             and real_eval_cfg is not None
             and real_eval_cfg.should
-            and train_step > 0
-            and train_step % real_eval_cfg.every_steps == 0
+            and self._actor_critic_env_step() > 0
+            and self._actor_critic_env_step() - self.num_env_steps_last_real_eval >= real_eval_cfg.every_steps
         )
 
     @torch.no_grad()
@@ -334,6 +356,7 @@ class Trainer(StateDictMixin):
 
         log = {
             "actor_critic/train_step": train_step,
+            "actor_critic/env_step": self._actor_critic_env_step(),
             f"{metric_prefix}/return_mean": float(np.mean(completed_returns)),
             f"{metric_prefix}/return_std": float(np.std(completed_returns)),
             f"{metric_prefix}/episode_length_mean": float(np.mean(completed_lengths)),
@@ -374,14 +397,30 @@ class Trainer(StateDictMixin):
                 self.num_epochs_collect, sd_train_dataset = broadcast_if_needed(self.num_epochs_collect, self.train_dataset.state_dict())
                 self.train_dataset.load_state_dict(sd_train_dataset)
 
-        num_epochs = self.num_epochs_collect + self._cfg.training.num_final_epochs
+        num_final_epochs = self._cfg.training.num_final_epochs
+        if num_final_epochs is None:
+            if not self._is_model_free or self._target_model_free_env_steps() is None:
+                raise ValueError("training.num_final_epochs can only be null when model-free training has max_env_steps set.")
+            num_final_epochs = 0
 
-        while self.epoch < num_epochs:
+        num_epochs = self.num_epochs_collect + num_final_epochs
+        if self._is_model_free and self._target_model_free_env_steps() is not None:
+            steps_per_epoch = self._cfg.actor_critic.training.steps_per_epoch * self._actor_critic_env_steps_per_update()
+            remaining_env_steps = max(0, self._target_model_free_env_steps() - self._actor_critic_env_step())
+            num_epochs = self.epoch + int(math.ceil(remaining_env_steps / steps_per_epoch))
+
+        while self.epoch < num_epochs and not self._model_free_training_is_done():
             self.epoch += 1
             start_time = time.time()
 
             if self._rank == 0:
-                print(f"\nEpoch {self.epoch} / {num_epochs}\n")
+                if self._is_model_free and self._target_model_free_env_steps() is not None:
+                    print(
+                        f"\nEpoch {self.epoch} / {num_epochs} "
+                        f"({self._actor_critic_env_step()} / {self._target_model_free_env_steps()} env steps)\n"
+                    )
+                else:
+                    print(f"\nEpoch {self.epoch} / {num_epochs}\n")
 
             # Training
             should_collect_train = (self._rank == 0 and not self._is_model_free and not self._is_static_dataset and self.epoch <= self.num_epochs_collect)
@@ -492,6 +531,9 @@ class Trainer(StateDictMixin):
             cfg = getattr(self._cfg, name).training
             if self.epoch > cfg.start_after_epochs:
                 steps = cfg.steps_first_epoch if self.epoch == 1 else cfg.steps_per_epoch
+                if name == "actor_critic" and self._is_model_free and self._target_model_free_env_steps() is not None:
+                    remaining_env_steps = self._target_model_free_env_steps() - self._actor_critic_env_step()
+                    steps = min(steps, int(math.ceil(remaining_env_steps / self._actor_critic_env_steps_per_update())))
                 to_log += self.train_component(name, steps)
         return to_log
 
@@ -541,24 +583,38 @@ class Trainer(StateDictMixin):
                 train_step = self.num_update_train.get(name) + 1
                 self.num_update_train.set(name, train_step)
                 metrics["train_step"] = train_step
+                if name == "actor_critic":
+                    metrics["env_step"] = self._actor_critic_env_step()
 
                 if lr_sched is not None:
                     metrics["lr"] = lr_sched.get_last_lr()[0]
                     lr_sched.step()
 
-                if self._should_run_real_eval(name, train_step):
+                if self._should_run_real_eval(name):
+                    self.num_env_steps_last_real_eval = self._actor_critic_env_step()
                     real_eval_logs = self._run_real_env_validation(train_step)
                     if self._rank == 0:
                         wandb_log(real_eval_logs, self.epoch)
 
+            metrics = self._detach_metrics(metrics)
             to_log.append(metrics)
+            log_every_updates = getattr(cfg, "log_every_updates", None)
+            if (
+                self._rank == 0
+                and log_every_updates is not None
+                and "env_step" in metrics
+                and "train_step" in metrics
+                and metrics["train_step"] > 0
+                and metrics["train_step"] % log_every_updates == 0
+            ):
+                wandb_log([self._format_train_log(name, metrics)], self.epoch)
 
         process_confusion_matrices_if_any_and_compute_classification_metrics(to_log)
         summary = {}
         counts = {}
         for d in to_log:
             for k, v in d.items():
-                if k == "train_step" or k.startswith("num_batch_train_") or k.startswith("actor_critic/"):
+                if k in ("train_step", "env_step") or k.startswith("num_batch_train_") or k.startswith("actor_critic/"):
                     continue
                 if isinstance(v, torch.Tensor):
                     if v.numel() != 1:
@@ -576,24 +632,36 @@ class Trainer(StateDictMixin):
             for k in summary
             if counts[k] > 0
         }
-        to_log = [
-            (
-                d
-                if any(
-                    k.startswith("actor_critic/validation/") or k.startswith("actor_critic/test/")
-                    for k in d
-                )
-                else {
-                    f"{name}/train/{k}": v for k, v in d.items() if k != "train_step"
-                } | (
-                    {f"{name}/train_step": d["train_step"]} if "train_step" in d else {}
-                )
-            )
-            for d in to_log
-        ]
+        if getattr(cfg, "log_every_updates", None) is None:
+            to_log = [self._format_train_log(name, d) for d in to_log]
+        else:
+            to_log = []
         if train_epoch_log:
             to_log.append(train_epoch_log)
         return to_log
+
+    def _format_train_log(self, name: str, metrics: dict) -> dict:
+        log = {
+            f"{name}/train/{k}": v
+            for k, v in metrics.items()
+            if k not in ("train_step", "env_step")
+        }
+        if "train_step" in metrics:
+            log[f"{name}/train_step"] = metrics["train_step"]
+        if name == "actor_critic" and "env_step" in metrics:
+            log["actor_critic/env_step"] = metrics["env_step"]
+        return log
+
+    def _detach_metrics(self, metrics: dict) -> dict:
+        return {k: self._detach_metric_value(v) for k, v in metrics.items()}
+
+    def _detach_metric_value(self, value):
+        if isinstance(value, torch.Tensor):
+            value = value.detach()
+            return value.item() if value.numel() == 1 else value.cpu()
+        if isinstance(value, np.generic):
+            return value.item()
+        return value
 
     @torch.no_grad()
     def test_component(self, name: str) -> Logs:
