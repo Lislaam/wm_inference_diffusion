@@ -20,6 +20,8 @@ def make_env_loop(
 
     seed = random.randint(0, 2**31 - 1)
     obs, _ = env.reset(seed=[seed + i for i in range(env.num_envs)])
+    episode_returns = torch.zeros(env.num_envs, device=model.device)
+    episode_lengths = torch.zeros(env.num_envs, device=model.device)
 
     while True:
         hx, cx = hx.detach(), cx.detach()
@@ -35,6 +37,8 @@ def make_env_loop(
                 act = torch.randint(low=0, high=env.num_actions, size=(obs.size(0),), device=obs.device)
 
             next_obs, rew, end, trunc, info = env.step(act)
+            episode_returns += rew
+            episode_lengths += 1
 
             if n > 0:
                 val_bootstrap = val.detach().clone()
@@ -45,6 +49,11 @@ def make_env_loop(
             dead = torch.logical_or(end, trunc)
 
             if dead.any():
+                info["completed_episode_returns"] = episode_returns[dead].detach().cpu().tolist()
+                info["completed_episode_lengths"] = episode_lengths[dead].detach().cpu().tolist()
+                episode_returns[dead] = 0
+                episode_lengths[dead] = 0
+
                 with torch.no_grad():
                     _, val_final_obs, _ = model.predict_act_value(info["final_observation"], (hx[dead], cx[dead]))
                 reset_gate = 1 - dead.float().unsqueeze(1)

@@ -84,12 +84,10 @@ class ActorCritic(nn.Module):
 
     def forward(self) -> LossAndLogs:
         c = self.loss_cfg
-        _, act, rew, end, trunc, logits_act, val, val_bootstrap, _ = self.env_loop.send(c.backup_every)
+        _, act, rew, end, trunc, logits_act, val, val_bootstrap, infos = self.env_loop.send(c.backup_every)
 
         d = Categorical(logits=logits_act)
         entropy = d.entropy().mean()
-        probs = d.probs.detach().cpu() 
-        mean_probs = probs.mean(dim=0)  # shape: [horizon, num_actions]
 
         lambda_returns = compute_lambda_returns(rew, end, trunc, val_bootstrap, c.gamma, c.lambda_)
 
@@ -98,16 +96,30 @@ class ActorCritic(nn.Module):
         loss_entropy = -c.weight_entropy_loss * entropy
 
         loss = loss_actions + loss_entropy + loss_values
+        completed_episode_returns = [
+            ret
+            for info in infos
+            for ret in info.get("completed_episode_returns", [])
+        ]
+        completed_episode_lengths = [
+            length
+            for info in infos
+            for length in info.get("completed_episode_lengths", [])
+        ]
 
         metrics = {
-            "action_policy_entropy": entropy.detach() / math.log(2),
+            "policy_entropy": entropy.detach() / math.log(2),
+            "training_loss": loss,
             "loss_actions": loss_actions,
-            "loss_entropy": loss_entropy,
+            "entropy_loss": loss_entropy,
             "loss_values": loss_values,
-            "loss_total": loss,
-            "mean_reward": rew.mean(dim=1)[0],  # Mean reward on immediate step
-            "mean_action_probs": mean_probs.mean(dim=0).numpy() # Mean value for each action across the horizon
+            "rollout_reward_mean": rew.mean(),
         }
+        if completed_episode_returns:
+            metrics["episode_score_mean"] = sum(completed_episode_returns) / len(completed_episode_returns)
+            metrics["episode_score_max"] = max(completed_episode_returns)
+            metrics["episode_length_mean"] = sum(completed_episode_lengths) / len(completed_episode_lengths)
+            metrics["num_completed_episodes"] = len(completed_episode_returns)
 
         return loss, metrics
 

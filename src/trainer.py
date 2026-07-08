@@ -358,6 +358,8 @@ class Trainer(StateDictMixin):
         log = {
             "actor_critic/train_step": train_step,
             "actor_critic/env_step": self._actor_critic_env_step(),
+            f"{metric_prefix}/score_mean": float(np.mean(completed_returns)),
+            f"{metric_prefix}/score_std": float(np.std(completed_returns)),
             f"{metric_prefix}/return_mean": float(np.mean(completed_returns)),
             f"{metric_prefix}/return_std": float(np.std(completed_returns)),
             f"{metric_prefix}/episode_length_mean": float(np.mean(completed_lengths)),
@@ -588,7 +590,7 @@ class Trainer(StateDictMixin):
                     metrics["env_step"] = self._actor_critic_env_step()
 
                 if lr_sched is not None:
-                    metrics["lr"] = lr_sched.get_last_lr()[0]
+                    metrics["learning_rate"] = lr_sched.get_last_lr()[0]
                     lr_sched.step()
 
                 if self._should_run_real_eval(name):
@@ -613,9 +615,12 @@ class Trainer(StateDictMixin):
         process_confusion_matrices_if_any_and_compute_classification_metrics(to_log)
         summary = {}
         counts = {}
+        keys_to_log = self._train_metric_keys_to_log(name)
         for d in to_log:
             for k, v in d.items():
                 if k in ("train_step", "env_step") or k.startswith("num_batch_train_") or k.startswith("actor_critic/"):
+                    continue
+                if keys_to_log is not None and k not in keys_to_log:
                     continue
                 if isinstance(v, torch.Tensor):
                     if v.numel() != 1:
@@ -642,16 +647,34 @@ class Trainer(StateDictMixin):
         return to_log
 
     def _format_train_log(self, name: str, metrics: dict) -> dict:
+        keys_to_log = self._train_metric_keys_to_log(name)
         log = {
             f"{name}/train/{k}": v
             for k, v in metrics.items()
-            if k not in ("train_step", "env_step")
+            if k not in ("train_step", "env_step") and (keys_to_log is None or k in keys_to_log)
         }
         if "train_step" in metrics:
             log[f"{name}/train_step"] = metrics["train_step"]
         if name == "actor_critic" and "env_step" in metrics:
             log["actor_critic/env_step"] = metrics["env_step"]
         return log
+
+    def _train_metric_keys_to_log(self, name: str):
+        if name != "actor_critic":
+            return None
+        return {
+            "training_loss",
+            "learning_rate",
+            "policy_entropy",
+            "entropy_loss",
+            "loss_actions",
+            "loss_values",
+            "grad_norm_before_clip",
+            "episode_score_mean",
+            "episode_score_max",
+            "episode_length_mean",
+            "num_completed_episodes",
+        }
 
     def _detach_metrics(self, metrics: dict) -> dict:
         return {k: self._detach_metric_value(v) for k, v in metrics.items()}
