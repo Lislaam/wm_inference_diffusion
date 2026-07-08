@@ -263,7 +263,7 @@ class Trainer(StateDictMixin):
         target_env_steps = self._target_model_free_env_steps()
         return target_env_steps is not None and self._actor_critic_env_step() >= target_env_steps
 
-    def _make_real_eval_env(self):
+    def _make_real_eval_env(self, seed: Optional[int] = None):
         if self._cfg.env.name == "atari":
             return make_atari_env(
                 num_envs=self._cfg.collection.test.num_envs,
@@ -274,6 +274,7 @@ class Trainer(StateDictMixin):
             return make_procgen_env(
                 num_envs=self._cfg.collection.test.num_envs,
                 device=self._device,
+                seed=seed,
                 **self._cfg.env.test,
             )
         raise ValueError(f"Unsupported env.name '{self._cfg.env.name}'. Expected 'atari' or 'procgen'.")
@@ -297,7 +298,7 @@ class Trainer(StateDictMixin):
         metric_prefix: str,
     ) -> Logs:
         real_eval_cfg = self._cfg.evaluation.real_env
-        env = self._make_real_eval_env()
+        env = self._make_real_eval_env(seed=train_step)
         max_episode_steps = getattr(real_eval_cfg, "max_episode_steps", None)
 
         obs = env.reset()[0]

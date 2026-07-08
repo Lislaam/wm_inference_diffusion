@@ -63,11 +63,11 @@ training:
 
 evaluation:
   should: True # False for collect data for now
-  every: 100
+  every: 500000
   real_env:
     should: True
-    every_steps: 50000
-    num_episodes: 1
+    every_steps: 500000
+    num_episodes: 16
     deterministic: False
     max_episode_steps: 1000
   planning_steps: 0

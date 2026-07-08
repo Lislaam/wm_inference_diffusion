@@ -16,8 +16,8 @@ test:
   done_on_life_loss: false
   size: ${env.train.size}
   distribution_mode: ${env.train.distribution_mode}
-  num_levels: ${env.train.num_levels}
-  start_level: ${env.train.start_level}
+  num_levels: 1000
+  start_level: 100000
   max_episode_steps: null
 
 keymap: procgen/${env.train.id}
