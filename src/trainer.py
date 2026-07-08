@@ -119,8 +119,8 @@ class Trainer(StateDictMixin):
         if cfg.initialization.path_to_ckpt is not None:
             self.agent.load(**cfg.initialization)
 
-        # Collectors
-        if not self._is_static_dataset and self._rank == 0:
+        # Collectors are only needed for world-model dataset collection.
+        if not self._is_model_free and not self._is_static_dataset and self._rank == 0:
             self._train_collector = make_collector(
                 train_env, self.agent.actor_critic, self.train_dataset, cfg.collection.train.epsilon
             )
@@ -161,16 +161,22 @@ class Trainer(StateDictMixin):
         def get_sample_weights(sample_weights: List[float]) -> Optional[List[float]]:
             return None if (self._is_static_dataset and cfg.static_dataset.ignore_sample_weights) else sample_weights
 
-        c = cfg.denoiser.training
-        seq_length = cfg.agent.denoiser.inner_model.num_steps_conditioning + 1 + c.num_autoregressive_steps
-        bs = make_batch_sampler(c.batch_size, seq_length, get_sample_weights(c.sample_weights))
-        dl_denoiser_train = make_data_loader(batch_sampler=bs)
-        dl_denoiser_test = DatasetTraverser(self.test_dataset, c.batch_size, seq_length)
+        if self._is_model_free:
+            dl_denoiser_train = None
+            dl_denoiser_test = None
+            dl_rew_end_model_train = None
+            dl_rew_end_model_test = None
+        else:
+            c = cfg.denoiser.training
+            seq_length = cfg.agent.denoiser.inner_model.num_steps_conditioning + 1 + c.num_autoregressive_steps
+            bs = make_batch_sampler(c.batch_size, seq_length, get_sample_weights(c.sample_weights))
+            dl_denoiser_train = make_data_loader(batch_sampler=bs)
+            dl_denoiser_test = DatasetTraverser(self.test_dataset, c.batch_size, seq_length)
 
-        c = cfg.rew_end_model.training
-        bs = make_batch_sampler(c.batch_size, c.seq_length, get_sample_weights(c.sample_weights), can_sample_beyond_end=True)
-        dl_rew_end_model_train = make_data_loader(batch_sampler=bs)
-        dl_rew_end_model_test = DatasetTraverser(self.test_dataset, c.batch_size, c.seq_length)
+            c = cfg.rew_end_model.training
+            bs = make_batch_sampler(c.batch_size, c.seq_length, get_sample_weights(c.sample_weights), can_sample_beyond_end=True)
+            dl_rew_end_model_train = make_data_loader(batch_sampler=bs)
+            dl_rew_end_model_test = DatasetTraverser(self.test_dataset, c.batch_size, c.seq_length)
 
         self._data_loader_train = CommonTools(dl_denoiser_train, dl_rew_end_model_train, None)
         self._data_loader_test = CommonTools(dl_denoiser_test, dl_rew_end_model_test, None)
@@ -282,6 +288,11 @@ class Trainer(StateDictMixin):
         completed_returns = []
         completed_lengths = []
         entropies = []
+        recent_frames = []
+
+        def format_frame(frame: torch.Tensor) -> np.ndarray:
+            img = frame.detach().cpu().clamp(-1, 1).add(1).div(2).mul(255)
+            return img.permute(1, 2, 0).to(torch.uint8).numpy()
 
         while len(completed_returns) < num_episodes:
             logits, _, (hx, cx) = self.agent.actor_critic.predict_act_value(obs, (hx, cx))
@@ -292,6 +303,8 @@ class Trainer(StateDictMixin):
 
             obs, rewards, terminated, truncated, _ = env.step(actions)
             done = (terminated | truncated).bool()
+            recent_frames.append(format_frame(obs[0]))
+            recent_frames = recent_frames[-4:]
 
             returns += rewards
             lengths += 1
@@ -319,7 +332,7 @@ class Trainer(StateDictMixin):
         completed_returns = completed_returns[:num_episodes]
         completed_lengths = completed_lengths[:num_episodes]
 
-        return [{
+        log = {
             "actor_critic/train_step": train_step,
             f"{metric_prefix}/return_mean": float(np.mean(completed_returns)),
             f"{metric_prefix}/return_std": float(np.std(completed_returns)),
@@ -327,7 +340,10 @@ class Trainer(StateDictMixin):
             f"{metric_prefix}/episode_length_std": float(np.std(completed_lengths)),
             f"{metric_prefix}/policy_entropy_mean": float(np.mean(entropies)),
             f"{metric_prefix}/num_episodes": num_episodes,
-        }]
+        }
+        if recent_frames:
+            log[f"{metric_prefix}/last_frames"] = wandb.Image(np.concatenate(recent_frames, axis=1))
+        return [log]
 
     @torch.no_grad()
     def _run_real_env_validation(self, train_step: int) -> Logs:
@@ -381,7 +397,7 @@ class Trainer(StateDictMixin):
 
             # Evaluation
             should_test = self._rank == 0 and self._cfg.evaluation.should and (self.epoch % self._cfg.evaluation.every == 0)
-            should_collect_test = should_test and not self._is_static_dataset
+            should_collect_test = should_test and not self._is_model_free and not self._is_static_dataset
 
             if should_collect_test:
                 to_log += self.collect_test()
@@ -406,7 +422,7 @@ class Trainer(StateDictMixin):
             wandb_log(self._run_final_real_env_test(), self.epoch)
 
         # Keep the collected held-out dataset for visualization/import when available.
-        if self._rank == 0 and not self._is_static_dataset:
+        if self._rank == 0 and not self._is_model_free and not self._is_static_dataset:
             wandb_log(self.collect_test(final=True), self.epoch)
 
     def collect_initial_dataset(self) -> Tuple[int, Logs]:

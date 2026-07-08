@@ -53,10 +53,12 @@ static_dataset:
 
 training:
   should: True
-  num_final_epochs: 0
+  # Model-free training does not use collection.train.num_steps_total; with
+  # actor_critic_loss.backup_every=15 and batch_size=1 this is ~200M env steps.
+  num_final_epochs: 33322
   cache_in_ram: True
   num_workers_data_loaders: 0
-  model_free: False # if True, turn off world_model training and RL in imagination
+  model_free: True # if True, turn off world_model training and RL in imagination
   compile_wm: True
   agent_in_wm: False # keep False for the standard world-model training loop
 
