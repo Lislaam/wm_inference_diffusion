@@ -142,7 +142,7 @@ actor_critic:
     start_after_epochs: 0
     steps_first_epoch: 40
     steps_per_epoch: 40
-    lr_warmup_steps: 100
+    lr_warmup_steps: 10000
     max_grad_norm: 1.0
     num_eval: 50000 # Really high number to ensure episode finishes
 
