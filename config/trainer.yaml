@@ -148,7 +148,7 @@ actor_critic:
 
   actor_critic_loss:
     _target_: models.actor_critic.ActorCriticLossConfig
-    backup_every: 64
+    backup_every: 96
     gamma: 0.999
     lambda_: 0.95
     weight_value_loss: 1.0
