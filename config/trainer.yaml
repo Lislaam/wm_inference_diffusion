@@ -136,7 +136,7 @@ rew_end_model:
 actor_critic:
   training:
     sample_weights: ${denoiser.training.sample_weights}
-    batch_size: 64
+    batch_size: 16
     grad_acc_steps: 1
     log_every_updates: 1
     start_after_epochs: 0
@@ -148,7 +148,7 @@ actor_critic:
 
   actor_critic_loss:
     _target_: models.actor_critic.ActorCriticLossConfig
-    backup_every: 128
+    backup_every: 64
     gamma: 0.999
     lambda_: 0.95
     weight_value_loss: 1.0
