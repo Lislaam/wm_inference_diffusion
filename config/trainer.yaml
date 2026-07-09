@@ -136,7 +136,7 @@ rew_end_model:
 actor_critic:
   training:
     sample_weights: ${denoiser.training.sample_weights}
-    batch_size: 16
+    batch_size: 32
     grad_acc_steps: 1
     log_every_updates: 1
     start_after_epochs: 0
