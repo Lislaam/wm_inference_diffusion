@@ -66,9 +66,9 @@ evaluation:
   every: 500000
   real_env:
     should: True
-    every_steps: 500000
-    num_episodes: 16
-    deterministic: False
+    every_steps: 1000000
+    num_episodes: 64
+    deterministic: True
     max_episode_steps: 1000
   planning_steps: 0
   planning_percentage: 0 # Probability of taking a planning step after conditioning warmup
@@ -152,9 +152,9 @@ actor_critic:
     gamma: 0.999
     lambda_: 0.95
     weight_value_loss: 1.0
-    weight_entropy_loss: 0.01
+    weight_entropy_loss: 0.003
 
   optimizer:
-    lr: 5e-4
+    lr: 3e-4
     weight_decay: 0
     eps: 1e-8
