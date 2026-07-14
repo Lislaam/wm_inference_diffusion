@@ -11,15 +11,15 @@ wandb:
   mode: online
   project: world_models
   entity: null
-  name: ${env.env_type}_ac_model_free_training_time_${now:%Y-%m-%d_%H-%M-%S}
+  name: ${env.env_type}_rew_end_denoiser_training_time_${now:%Y-%m-%d_%H-%M-%S}
   group: null
   tags: null
   notes: null
 
 initialization:
-  path_to_ckpt: null # keep null to train a new world model from scratch
-  load_denoiser: True
-  load_rew_end_model: True
+  path_to_ckpt: ${hydra:runtime.cwd}/trained_models/coinrun-trained-policy/agent.pt
+  load_denoiser: False
+  load_rew_end_model: False
   load_actor_critic: True
 
 common:
@@ -34,8 +34,8 @@ checkpointing:
 collection:
   train:
     num_envs: 1
-    epsilon: 0.01
-    num_steps_total: 200000000
+    epsilon: 0.4 #40% random actions, the rest from my trained AC
+    num_steps_total: 100096 # 391 * 256; must be divisible by steps_per_epoch
     first_epoch:
       min: 5120
       max: 10240  # null: no maximum
@@ -53,17 +53,19 @@ static_dataset:
 
 training:
   should: True
-  max_env_steps: 200000000 # model-free only; set null when returning to normal world-model training
-  num_final_epochs: null # optional for model-free when max_env_steps is set
+  max_env_steps: null # model-free only
+  num_final_epochs: 1 # continue training once after the final collection epoch
   cache_in_ram: True
   num_workers_data_loaders: 0
-  model_free: True # if True, turn off world_model training and RL in imagination
+  model_free: False # False enables denoiser and reward/end-model training
   compile_wm: False
   agent_in_wm: False # keep False for the standard world-model training loop
 
 evaluation:
   should: True # False for collect data for now
-  every: 500000
+  every: 50 # Periodic held-out collection and WM validation
+  wm_frames_every: 10 # Log conditioning | target | WM prediction every N epochs; null disables
+  wm_frames_num_samples: 4
   real_env:
     should: True
     every_steps: 1000000
@@ -139,7 +141,7 @@ actor_critic:
     batch_size: 32
     grad_acc_steps: 1
     log_every_updates: 1
-    start_after_epochs: 0
+    start_after_epochs: 1000000000 # Keep the downloaded policy fixed; train only the world model
     steps_first_epoch: 40
     steps_per_epoch: 40
     lr_warmup_steps: 1000

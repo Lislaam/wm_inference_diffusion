@@ -19,6 +19,7 @@ from agent import Agent
 from coroutines.collector import make_collector, NumToCollect
 from data import BatchSampler, collate_segments_to_batch, Dataset, DatasetTraverser
 from envs import make_atari_env, make_procgen_env, WorldModelEnv
+from models.diffusion import DiffusionSampler
 from utils import (
     broadcast_if_needed,
     build_ddp_wrapper,
@@ -562,11 +563,14 @@ class Trainer(StateDictMixin):
         opt.zero_grad()
         data_iterator = iter(data_loader) if data_loader is not None else None
         to_log = []
+        visualization_batch = None
 
         num_steps = cfg.grad_acc_steps * steps
 
         for i in trange(num_steps, desc=f"Training {name}", disable=self._rank > 0):
             batch = next(data_iterator).to(self._device) if data_iterator is not None else None
+            if name == "denoiser" and visualization_batch is None:
+                visualization_batch = batch
             loss, metrics = model(batch) if batch is not None else model()
             loss.backward()
             metrics["train_step"] = self.num_update_train.get(name)
@@ -644,7 +648,69 @@ class Trainer(StateDictMixin):
             to_log = []
         if train_epoch_log:
             to_log.append(train_epoch_log)
+        wm_frames_log = self._make_wm_frames_log(name, visualization_batch)
+        if wm_frames_log is not None:
+            to_log.append(wm_frames_log)
         return to_log
+
+    @torch.no_grad()
+    def _make_wm_frames_log(self, name: str, batch) -> Optional[dict]:
+        """Log one-step WM samples as conditioning | target | prediction rows."""
+        every = getattr(self._cfg.evaluation, "wm_frames_every", None)
+        if (
+            name != "denoiser"
+            or batch is None
+            or self._rank != 0
+            or every is None
+            or every <= 0
+            or self.epoch % every != 0
+        ):
+            return None
+
+        denoiser = self.agent.denoiser
+        was_training = denoiser.training
+        denoiser.eval()
+
+        n = self._cfg.agent.denoiser.inner_model.num_steps_conditioning
+        valid = batch.mask_padding[:, n].nonzero(as_tuple=False).flatten()
+        num_samples = min(int(self._cfg.evaluation.wm_frames_num_samples), len(valid))
+        if num_samples == 0:
+            denoiser.train(was_training)
+            return None
+        idx = valid[:num_samples]
+
+        prev_obs = batch.obs[idx, :n]
+        prev_act = batch.act[idx, :n]
+        target = batch.obs[idx, n]
+        sampler = DiffusionSampler(denoiser, instantiate(self._cfg.world_model_env.diffusion_sampler))
+        prediction, _ = sampler.sample(prev_obs, prev_act)
+
+        def to_uint8(frames: torch.Tensor) -> np.ndarray:
+            return (
+                frames.detach()
+                .cpu()
+                .clamp(-1, 1)
+                .add(1)
+                .div(2)
+                .mul(255)
+                .to(torch.uint8)
+                .permute(0, 2, 3, 1)
+                .numpy()
+            )
+
+        conditioning = to_uint8(prev_obs[:, -1])
+        target = to_uint8(target)
+        prediction = to_uint8(prediction)
+        rows = [np.concatenate((c, t, p), axis=1) for c, t, p in zip(conditioning, target, prediction)]
+        grid = np.concatenate(rows, axis=0)
+
+        denoiser.train(was_training)
+        return {
+            "denoiser/qualitative/frames": wandb.Image(
+                grid,
+                caption="Each row: last conditioning frame | ground truth next frame | WM prediction",
+            )
+        }
 
     def _format_train_log(self, name: str, metrics: dict) -> dict:
         keys_to_log = self._train_metric_keys_to_log(name)

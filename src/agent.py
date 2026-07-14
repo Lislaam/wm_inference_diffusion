@@ -55,12 +55,6 @@ class Agent(nn.Module):
         sd = torch.load(Path(path_to_ckpt), map_location=self.device)
         sd = {k: extract_state_dict(sd, k) for k in ("denoiser", "rew_end_model", "actor_critic")}
 
-        #Debug 
-        print(sd.keys())
-        print(type(sd["denoiser"]))
-        print(len(sd["denoiser"]))
-        print(sd["denoiser"])
-
         if load_denoiser:
             self.denoiser.load_state_dict(sd["denoiser"])
         if load_rew_end_model:
