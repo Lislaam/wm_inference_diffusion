@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from pathlib import Path
+import sys
 from typing import Union
 
+import numpy as np
 import torch
 import torch.nn as nn
 
@@ -52,7 +54,17 @@ class Agent(nn.Module):
         load_rew_end_model: bool = True,
         load_actor_critic: bool = True,
     ) -> None:
-        sd = torch.load(Path(path_to_ckpt), map_location=self.device)
+        try:
+            sd = torch.load(Path(path_to_ckpt), map_location=self.device)
+        except ModuleNotFoundError as error:
+            # NumPy 2 serializes some objects below numpy._core, while this
+            # project intentionally uses NumPy 1.26 (where it is numpy.core).
+            if error.name is None or not error.name.startswith("numpy._core"):
+                raise
+            sys.modules.setdefault("numpy._core", np.core)
+            sys.modules.setdefault("numpy._core.multiarray", np.core.multiarray)
+            sys.modules.setdefault("numpy._core.numeric", np.core.numeric)
+            sd = torch.load(Path(path_to_ckpt), map_location=self.device)
         sd = {k: extract_state_dict(sd, k) for k in ("denoiser", "rew_end_model", "actor_critic")}
 
         if load_denoiser:
