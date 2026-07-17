@@ -11,13 +11,13 @@ wandb:
   mode: online
   project: world_models
   entity: null
-  name: ${env.env_type}_rew_end_denoiser_training_time_${now:%Y-%m-%d_%H-%M-%S}
+  name: ${env.env_type}_${evaluation.planning_steps}_roll_${evaluation.inner_planning_steps}_inner_${evaluation.planning_percentage}_pct_${evaluation.planning_depth}_max_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}  # ${env.env_type}_rew_end_denoiser_training_time_${now:%Y-%m-%d_%H-%M-%S}
   group: null
   tags: null
   notes: null
 
 initialization:
-  path_to_ckpt: ${hydra:runtime.cwd}/trained_models/coinrun-trained-policy/agent.pt
+  path_to_ckpt: ${hydra:runtime.cwd}/trained_models/coinrun-trained-policy/wm_agent.pt
   load_denoiser: False
   load_rew_end_model: False
   load_actor_critic: True
@@ -34,7 +34,7 @@ checkpointing:
 collection:
   train:
     num_envs: 1
-    epsilon: 0.4 #40% random actions, the rest from my trained AC
+    epsilon: 0.2 # 20% random actions, the rest from my trained AC
     num_steps_total: 100096 # 391 * 256; must be divisible by steps_per_epoch
     first_epoch:
       min: 5120
@@ -52,7 +52,7 @@ static_dataset:
   ignore_sample_weights: True
 
 training:
-  should: True
+  should: False
   max_env_steps: null # model-free only
   num_final_epochs: 1 # continue training once after the final collection epoch
   cache_in_ram: True
@@ -68,7 +68,7 @@ evaluation:
   wm_frames_num_samples: 4
   real_env:
     should: True
-    every_steps: 1000000
+    every_steps: 1
     num_episodes: 64
     deterministic: True
     max_episode_steps: 1000
