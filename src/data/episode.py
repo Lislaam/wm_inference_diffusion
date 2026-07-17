@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import torch
+from utils import torch_load
 
 
 @dataclass
@@ -38,7 +39,7 @@ class Episode:
         return cls(
             **{
                 k: v.div(255).mul(2).sub(1) if k == "obs" else v
-                for k, v in torch.load(Path(path), map_location=map_location).items()
+                for k, v in torch_load(Path(path), map_location=map_location).items()
             }
         )
 

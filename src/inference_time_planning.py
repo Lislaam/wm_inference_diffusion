@@ -34,6 +34,7 @@ from utils import (
     set_seed,
     StateDictMixin,
     try_until_no_except,
+    torch_load,
     wandb_log,
 )
 
@@ -547,4 +548,4 @@ class WMInference(StateDictMixin):
     
 
     def load_state_checkpoint(self) -> None:
-        self.load_state_dict(torch.load(self._path_state_ckpt, map_location=self._device))
+        self.load_state_dict(torch_load(self._path_state_ckpt, map_location=self._device))

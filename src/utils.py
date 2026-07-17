@@ -6,6 +6,7 @@ from functools import partial
 import json
 from pathlib import Path
 import random
+import sys
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from omegaconf import OmegaConf
@@ -72,6 +73,21 @@ PROCGEN_100K_GAMES = [
 
 Logs = List[Dict[str, float]]
 LossAndLogs = Tuple[Tensor, Dict[str, Any]]
+
+
+def torch_load(*args, **kwargs):
+    """Load PyTorch files saved with either NumPy 1.x or NumPy 2.x."""
+    try:
+        return torch.load(*args, **kwargs)
+    except ModuleNotFoundError as error:
+        # NumPy 2 pickles internal objects below numpy._core. The equivalent
+        # package is numpy.core in the NumPy 1.26 environment used here.
+        if error.name is None or not error.name.startswith("numpy._core"):
+            raise
+        sys.modules.setdefault("numpy._core", np.core)
+        sys.modules.setdefault("numpy._core.multiarray", np.core.multiarray)
+        sys.modules.setdefault("numpy._core.numeric", np.core.numeric)
+        return torch.load(*args, **kwargs)
 
 
 class StateDictMixin:

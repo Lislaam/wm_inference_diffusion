@@ -10,7 +10,7 @@ import torch
 from .episode import Episode
 from .segment import Segment, SegmentId
 from .utils import make_segment
-from utils import StateDictMixin
+from utils import StateDictMixin, torch_load
 
 
 class Dataset(StateDictMixin, torch.utils.data.Dataset):
@@ -141,4 +141,4 @@ class Dataset(StateDictMixin, torch.utils.data.Dataset):
     def load_from_default_path(self) -> None:
         if self._default_path.is_file():
             print(f"Loading episode from: {self._default_path}")
-            self.load_state_dict(torch.load(self._default_path))
+            self.load_state_dict(torch_load(self._default_path))
