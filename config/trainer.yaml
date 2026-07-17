@@ -48,7 +48,7 @@ collection:
     num_final_episodes: 100
 
 static_dataset:
-  path: null  # keep null to collect fresh train/test data during training
+  path: /home/aguzel/wm_inference_diffusion/wm_procgen_datasets/${env.env_type}  # keep null to collect fresh train/test data during training
   ignore_sample_weights: True
 
 training:
