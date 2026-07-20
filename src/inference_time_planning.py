@@ -39,6 +39,21 @@ from utils import (
 )
 
 
+def frame_to_uint8(frame: torch.Tensor) -> np.ndarray:
+    """Convert a CHW observation normalized to [-1, 1] into an HWC image."""
+    return (
+        frame.detach()
+        .cpu()
+        .clamp(-1, 1)
+        .add(1)
+        .div(2)
+        .mul(255)
+        .to(torch.uint8)
+        .permute(1, 2, 0)
+        .numpy()
+    )
+
+
 class WMInference(StateDictMixin):
     def __init__(self, cfg: DictConfig, root_dir: Path) -> None:
         torch.backends.cuda.matmul.allow_tf32 = True
@@ -188,6 +203,7 @@ class WMInference(StateDictMixin):
         wandb.define_metric("unplanned_obs_sequence", step_metric="eval_step")
         wandb.define_metric("obs_sequence", step_metric="eval_step")
         wandb.define_metric("wm_obs_sequence", step_metric="eval_step")
+        wandb.define_metric("wm_predicted_next_obs", step_metric="eval_step")
         wandb.define_metric("meta_planning_depth", step_metric="eval_step")
         wandb.define_metric("step_time", step_metric="eval_step")
         wandb.define_metric("episode_length", step_metric="eval_step")
@@ -275,16 +291,7 @@ class WMInference(StateDictMixin):
                 # Convert to numpy and permute to HWC format
                 frames = []
                 for frame in obs_plot:
-                    img = frame.detach().cpu().numpy()  # [3, 64, 64]
-                    img = np.transpose(img, (1, 2, 0))  # [64, 64, 3]
-                    
-                    # Convert to uint8 if necessary
-                    if img.max() <= 1.0:
-                        img = (img * 255).astype(np.uint8)
-                    else:
-                        img = img.astype(np.uint8)
-                    
-                    frames.append(img)
+                    frames.append(frame_to_uint8(frame))
 
                 # Horizontally stack frames: [64, 64 * 4, 3]
                 grid = np.concatenate(frames, axis=1)
@@ -444,14 +451,7 @@ class WMInference(StateDictMixin):
                         row_images = []
                         for col_idx in range(len(wm_predicted_obs)):  # for each of the a columns
                             frame = wm_predicted_obs[col_idx][row_idx]  # [3, 64, 64]
-                            img = frame.detach().cpu().numpy()
-                            img = np.transpose(img, (1, 2, 0))  # [64, 64, 3]
-
-                            # Convert to uint8
-                            if img.max() <= 1.0:
-                                img = (img * 255).astype(np.uint8)
-                            else:
-                                img = img.astype(np.uint8)
+                            img = frame_to_uint8(frame)
 
                             pil_img = Image.fromarray(img)
                             draw = ImageDraw.Draw(pil_img)
@@ -482,16 +482,7 @@ class WMInference(StateDictMixin):
                 # Convert to numpy and permute to HWC format
                 frames = []
                 for frame in wm_obs_plot:
-                    img = frame.detach().cpu().numpy()  # [3, 64, 64]
-                    img = np.transpose(img, (1, 2, 0))  # [64, 64, 3]
-                    
-                    # Convert to uint8 if necessary
-                    if img.max() <= 1.0:
-                        img = (img * 255).astype(np.uint8)
-                    else:
-                        img = img.astype(np.uint8)
-                    
-                    frames.append(img)
+                    frames.append(frame_to_uint8(frame))
                 # Horizontally stack frames: [64, 64 * 4, 3]
                 wm_grid = np.concatenate(frames, axis=1)
 
@@ -500,16 +491,7 @@ class WMInference(StateDictMixin):
                 # Convert to numpy and permute to HWC format
                 frames = []
                 for frame in obs_plot:
-                    img = frame.detach().cpu().numpy()  # [3, 64, 64]
-                    img = np.transpose(img, (1, 2, 0))  # [64, 64, 3]
-                    
-                    # Convert to uint8 if necessary
-                    if img.max() <= 1.0:
-                        img = (img * 255).astype(np.uint8)
-                    else:
-                        img = img.astype(np.uint8)
-                    
-                    frames.append(img)
+                    frames.append(frame_to_uint8(frame))
                 # Horizontally stack frames: [64, 64 * 4, 3]
                 grid = np.concatenate(frames, axis=1)
 
@@ -529,7 +511,8 @@ class WMInference(StateDictMixin):
                     "actor_critic/eval/planned_mean_action_distribution": wandb.Histogram(probs.numpy()),
                     "actor_critic/eval/planned_entropy": entropy,
                     "obs_sequence": wandb.Image(Image.fromarray(grid)),           # from real obs
-                    "wm_obs_sequence": wandb.Image(Image.fromarray(wm_grid)),     # from world model buffer
+                    "wm_obs_sequence": wandb.Image(Image.fromarray(wm_grid)),     # real-frame WM conditioning buffer
+                    "wm_predicted_next_obs": wandb.Image(Image.fromarray(frame_to_uint8(predicted_obs[0]))),
                     "meta_planning_depth": depth,
                     "step_time": time.time() - start_time
                 })
