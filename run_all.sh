@@ -21,7 +21,12 @@ run_experiment() {
   echo "🚀 Running experiment: ${args[*]}"
 
   set +e
-  python -X faulthandler src/main.py "${args[@]}"
+  python -X faulthandler src/main.py "${args[@]}" \
+    training.agent_in_wm=true \
+    training.should=false \
+    initialization.load_denoiser=true \
+    initialization.load_rew_end_model=true \
+    initialization.load_actor_critic=true
   exit_code=$?
   set -e
 
@@ -43,22 +48,7 @@ run_experiment() {
     return 0   # <-- IMPORTANT: continue to next run
   fi
 
-  # Find the most recent Hydra output directory
-  LAST_RUN="$(ls -td outputs/*/* 2>/dev/null | head -n 1 || true)"
-  [[ -z "$LAST_RUN" ]] && { echo "⚠️ No outputs/*/* run dir found"; return 0; }
-
-  DATASET_DIR="$LAST_RUN/dataset"
-  [[ -d "$DATASET_DIR/train" ]] || { echo "⚠️ No dataset produced in $DATASET_DIR"; return 0; }
-
-  DEST="$HOME/wm_inference_diffusion/wm_atari_2hrs/trained_policy_${env_type}"
-  mkdir -p "$DEST"
-
-  # Don’t crash if folders already exist; overwrite cleanly
-  rm -rf "$DEST/train" "$DEST/test" || true
-  mv "$DATASET_DIR/train" "$DEST/train" || true
-  mv "$DATASET_DIR/test"  "$DEST/test"  || true
-
-  echo "📦 Moved dataset from $DATASET_DIR → $DEST"
+  echo "✅ Evaluation completed."
   return 0
 }
 

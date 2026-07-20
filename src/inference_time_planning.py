@@ -298,10 +298,12 @@ class WMInference(StateDictMixin):
                 })
 
                 step += 1
+                if done.any():
+                    break
 
         # Final summary stats
-        mean_return = sum(episode_rewards[:num_episodes]) / num_episodes
-        std_return = torch.tensor(episode_rewards[:num_episodes]).std().item()
+        mean_return = torch.stack(episode_rewards).sum().item()
+        std_return = 0.0  # One episode per seeded evaluation run.
         mean_entropy = torch.tensor(entropies).mean().item()
         std_entropy = torch.tensor(entropies).std().item()
         mean_value = torch.tensor(episode_values).mean().item()
@@ -524,9 +526,11 @@ class WMInference(StateDictMixin):
                 })
 
                 step += 1
+                if done.any():
+                    break
 
-        mean_return = sum(episode_rewards[:num_episodes]) / num_episodes
-        std_return = torch.tensor(episode_rewards[:num_episodes]).std().item()
+        mean_return = torch.stack(episode_rewards).sum().item()
+        std_return = 0.0  # One episode per seeded evaluation run.
         mean_entropy = torch.tensor(entropies).mean().item()
         std_entropy = torch.tensor(entropies).std().item()
         mean_td_error = torch.tensor(episode_td_errors).mean().item()

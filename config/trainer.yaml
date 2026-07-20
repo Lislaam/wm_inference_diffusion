@@ -18,8 +18,8 @@ wandb:
 
 initialization:
   path_to_ckpt: ${hydra:runtime.cwd}/trained_models/coinrun-trained-policy/wm_agent.pt
-  load_denoiser: False
-  load_rew_end_model: False
+  load_denoiser: True
+  load_rew_end_model: True
   load_actor_critic: True
 
 common:
@@ -59,7 +59,7 @@ training:
   num_workers_data_loaders: 0
   model_free: False # False enables denoiser and reward/end-model training
   compile_wm: False
-  agent_in_wm: False # keep False for the standard world-model training loop
+  agent_in_wm: True # Route main.py to WMInference for evaluation/planning in the world model
 
 evaluation:
   should: True # False for collect data for now
