@@ -150,7 +150,11 @@ class WMInference(StateDictMixin):
         # RL env
         c = cfg.actor_critic.training
         sl = cfg.agent.denoiser.inner_model.num_steps_conditioning
-        bs = make_batch_sampler(c.batch_size, sl, get_sample_weights(c.sample_weights))
+        # During evaluation the WM buffers track the real environments one for
+        # one. actor_critic.training.batch_size is a training-only setting and
+        # may differ (32 here) from collection.test.num_envs (1 here).
+        eval_batch_size = int(self.env.num_envs)
+        bs = make_batch_sampler(eval_batch_size, sl, get_sample_weights(c.sample_weights))
         dl_actor_critic = make_data_loader(batch_sampler=bs)
         wm_env_cfg = instantiate(cfg.world_model_env)
 
@@ -340,6 +344,11 @@ class WMInference(StateDictMixin):
         done = torch.zeros(env.num_envs, dtype=torch.bool, device=self._device)
 
         world_model_env.reset_no_data()  # builds internal buffers
+        if world_model_env.num_envs != env.num_envs:
+            raise RuntimeError(
+                f"WM/real-env batch mismatch: {world_model_env.num_envs} WM environments "
+                f"for {env.num_envs} real environments."
+            )
         num_episodes = self._cfg.actor_critic.training.num_eval
 
         episode_rewards = []
