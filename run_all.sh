@@ -8,9 +8,10 @@ trap "echo 'Script interrupted'; exit 1" INT
 cd ~/wm_inference_diffusion
 
 export WANDB_MODE=online
-export WANDB_START_METHOD=fork
+# Avoid forking a process after CUDA/native libraries have initialized.
+export WANDB_START_METHOD=thread
+export PYTHONFAULTHANDLER=1
 OUTPUT_DIR="./outputs"
-WANDB_KEY="8e782a594dad15c64868ccff129984a8a344af28"
 
 # -------------------------------------------------------
 # Function to safely run experiment ONCE (no retries)
@@ -20,16 +21,25 @@ run_experiment() {
   echo "🚀 Running experiment: ${args[*]}"
 
   set +e
-  python src/main.py "${args[@]}"
+  python -X faulthandler src/main.py "${args[@]}"
   exit_code=$?
   set -e
 
   if [[ $exit_code -ne 0 ]]; then
     echo "❌ Run failed (exit code $exit_code)"
-    echo "⚠️ Syncing offline W&B runs..."
-    WANDB_API_KEY=$WANDB_KEY wandb sync "$(find "$OUTPUT_DIR" -maxdepth 1 -type d -name 'offline-run-*' 2>/dev/null | sort -V)" || true
+    mapfile -t offline_runs < <(find "$OUTPUT_DIR" -type d -name 'offline-run-*' 2>/dev/null | sort -V)
+    if (( ${#offline_runs[@]} > 0 )); then
+      echo "⚠️ Syncing ${#offline_runs[@]} offline W&B run(s)..."
+      wandb sync "${offline_runs[@]}" || true
+    else
+      echo "ℹ️ No offline W&B runs to sync."
+    fi
     echo "Killing stray wandb processes..."
     pkill -9 wandb || true
+    if [[ $exit_code -eq 139 ]]; then
+      echo "🛑 Native-code segmentation fault; stopping the batch to avoid repeated crashes."
+      return "$exit_code"
+    fi
     return 0   # <-- IMPORTANT: continue to next run
   fi
 
