@@ -205,12 +205,17 @@ class WMInference(StateDictMixin):
         wandb.define_metric("actor_critic/eval/planned_value", step_metric="eval_step")
         wandb.define_metric("actor_critic/eval/td_error", step_metric="eval_step")
         wandb.define_metric("actor_critic/eval/planned_td_error", step_metric="eval_step")
+        wandb.define_metric("actor_critic/eval/planned_rollout_entropy", step_metric="eval_step")
         wandb.define_metric("actor_critic/eval/planning_flag", step_metric="eval_step")
+        wandb.define_metric("actor_critic/eval/ac_action", step_metric="eval_step")
+        wandb.define_metric("actor_critic/eval/executed_action", step_metric="eval_step")
+        wandb.define_metric("actor_critic/eval/planning_overrode_ac", step_metric="eval_step")
         wandb.define_metric("unplanned_obs_sequence", step_metric="eval_step")
         wandb.define_metric("obs_sequence", step_metric="eval_step")
         wandb.define_metric("wm_obs_sequence", step_metric="eval_step")
         wandb.define_metric("wm_predicted_next_obs", step_metric="eval_step")
         wandb.define_metric("wm_grid_rewards", step_metric="eval_step")
+        wandb.define_metric("wm_debug/*", step_metric="eval_step")
         wandb.define_metric("meta_planning_depth", step_metric="eval_step")
         wandb.define_metric("step_time", step_metric="eval_step")
         wandb.define_metric("episode_length", step_metric="eval_step")
@@ -244,7 +249,7 @@ class WMInference(StateDictMixin):
         """
         Evaluate the actor-critic in the real environment.
         """
-        self.agent.actor_critic.eval()
+        self.agent.eval()
 
         env = self.env
         # Initialize the real environment
@@ -274,7 +279,6 @@ class WMInference(StateDictMixin):
                 action = dist.probs.argmax(dim=-1) if self._cfg.evaluation.real_env.deterministic else dist.sample()
                 probs = dist.probs.detach().cpu()
                 entropy = dist.entropy().detach().cpu().item() / math.log(2)
-
                 value_t = value.clone().detach()
 
                 obs, rewards, terminated, truncated, infos = env.step(action)
@@ -350,7 +354,7 @@ class WMInference(StateDictMixin):
         """
         Evaluate the actor-critic in the real environment, using the World Model part to forecast an n-step lookahead.
         """
-        self.agent.actor_critic.eval()
+        self.agent.eval()
 
         env = self.env
         world_model_env = self.rl_env
@@ -358,6 +362,11 @@ class WMInference(StateDictMixin):
         done = torch.zeros(env.num_envs, dtype=torch.bool, device=self._device)
 
         world_model_env.reset_no_data()  # builds internal buffers
+        # Seed the history with the actual reset observation. The remaining
+        # slots are filled by real transitions before imagination is enabled.
+        world_model_env.obs_buffer[:, -1] = obs
+        num_conditioning_steps = self._cfg.agent.denoiser.inner_model.num_steps_conditioning
+        num_warmup_steps = max(num_conditioning_steps - 1, 0)
         if world_model_env.num_envs != env.num_envs:
             raise RuntimeError(
                 f"WM/real-env batch mismatch: {world_model_env.num_envs} WM environments "
@@ -387,70 +396,77 @@ class WMInference(StateDictMixin):
                 logits, value, (self.agent.hx, self.agent.cx) = self.agent.actor_critic.predict_act_value(obs, (self.agent.hx, self.agent.cx))
                 dist = Categorical(logits=logits)
                 actions = dist.probs.argmax(dim=-1) if self._cfg.evaluation.real_env.deterministic else dist.sample()
+                ac_action = actions.clone()
                 probs = dist.probs.detach().cpu()
                 entropy = dist.entropy().detach().cpu().item() / math.log(2)
+                rollout_entropy = None
 
                 use_real_step = (
-                    (i < self._cfg.agent.denoiser.inner_model.num_steps_conditioning)
+                    (i < num_warmup_steps)
                     or (np.random.uniform() > self._cfg.evaluation.planning_percentage)
                     or (self._cfg.evaluation.planning_steps == 0)
                 )
 
                 if use_real_step or (not use_real_step and self._cfg.evaluation.planning_mode == "random"):
                     actions = actions if use_real_step else torch.randint(0, self.env.num_actions, (env.num_envs,), device=self._device)
+                    executed_action = actions
 
                     planning_flag = 0 if use_real_step else 1
                     depth = 0
+                    world_model_env.act_buffer[:, -1] = actions
+                    predicted_from_obs = world_model_env.obs_buffer[:, -1].clone()
                     obs, rewards, terminated, truncated, infos = env.step(actions)
                     done = terminated | truncated
-                    episode_rewards.append(rewards)
 
-                    # Update WM buffers and hiddens with real action and obs following step() logic
-                    world_model_env.act_buffer[:, -1] = actions
-                    predicted_obs, _ = world_model_env.sampler.sample(world_model_env.obs_buffer, world_model_env.act_buffer) # Added to test
-                    test_sanity_rew, _, (world_model_env.hx_rew_end, world_model_env.cx_rew_end) = world_model_env.rew_end_model.predict_rew_end(
+                    # Teacher-force the real transition into the WM state.
+                    logits_rew, _, (world_model_env.hx_rew_end, world_model_env.cx_rew_end) = world_model_env.rew_end_model.predict_rew_end(
                         world_model_env.obs_buffer[:, -1:],
                         world_model_env.act_buffer[:, -1:],
                         obs.unsqueeze(1),
                         (world_model_env.hx_rew_end, world_model_env.cx_rew_end),
                     )
-                    rew_model_reward = Categorical(logits=test_sanity_rew).sample().squeeze(1) - 1.0
+                    reward_probs = logits_rew.softmax(dim=-1)
+                    rew_model_reward = reward_probs[..., 2] - reward_probs[..., 0]
                     world_model_env.obs_buffer = world_model_env.obs_buffer.roll(-1, dims=1)
                     world_model_env.act_buffer = world_model_env.act_buffer.roll(-1, dims=1)
-                    world_model_env.obs_buffer[:, -1] = obs # Changed from obs to predicted_obs to test
-
-                    entropies.append(entropy)
-                    all_probs.append(probs)
+                    world_model_env.obs_buffer[:, -1] = obs
+                    predicted_obs = None
 
                 else: # Planning step 
                     # Now we test out every action inside the world model and select the best one
                     # Cannot step() with every action as this will update the buffers.
                     # Copy some of the WM step() code and use it to predict obs and rewards
-                    planning_flag = 100
+                    planning_flag = 1
                     plan_count += 1
 
-                    plan = multistep_planning(self.agent, world_model_env, self.env.num_actions, self._cfg)
-                    best_action, candidate_actions, action_predicted_rews, wm_predicted_obs, entropy, depth = plan
+                    plan = multistep_planning(
+                        self.agent,
+                        world_model_env,
+                        self.env.num_actions,
+                        self._cfg,
+                        default_action=actions,
+                    )
+                    best_action, candidate_actions, action_predicted_rews, wm_predicted_obs, rollout_entropy, depth = plan
+                    executed_action = best_action
 
                     obs, rewards, terminated, truncated, infos = env.step(best_action)
                     done = terminated | truncated
 
                     # Update WM buffers and hiddens with the best action
                     world_model_env.act_buffer[:, -1] = best_action
+                    predicted_from_obs = world_model_env.obs_buffer[:, -1].clone()
                     predicted_obs, _ = world_model_env.sampler.sample(world_model_env.obs_buffer, world_model_env.act_buffer) # Added to test
-                    test_sanity_rew, _, (world_model_env.hx_rew_end, world_model_env.cx_rew_end) = world_model_env.rew_end_model.predict_rew_end(
+                    logits_rew, _, (world_model_env.hx_rew_end, world_model_env.cx_rew_end) = world_model_env.rew_end_model.predict_rew_end(
                         world_model_env.obs_buffer[:, -1:],
                         world_model_env.act_buffer[:, -1:],
                         obs.unsqueeze(1),
                         (world_model_env.hx_rew_end, world_model_env.cx_rew_end),
                     )
-                    rew_model_reward = Categorical(logits=test_sanity_rew).sample().squeeze(1) - 1.0
+                    reward_probs = logits_rew.softmax(dim=-1)
+                    rew_model_reward = reward_probs[..., 2] - reward_probs[..., 0]
                     world_model_env.obs_buffer = world_model_env.obs_buffer.roll(-1, dims=1)
                     world_model_env.act_buffer = world_model_env.act_buffer.roll(-1, dims=1)
                     world_model_env.obs_buffer[:, -1] = obs
-
-                    episode_rewards.append(rewards)
-                    entropies.append(entropy)
 
                     ###############################################
 
@@ -470,14 +486,14 @@ class WMInference(StateDictMixin):
 
                             # Get reward and color
                             rew = action_predicted_rews[col_idx, row_idx]
-                            if rew == 1:
+                            if rew > 0.05:
                                 color = (0, 255, 0)
-                            elif rew == -1:
+                            elif rew < -0.05:
                                 color = (0, 128, 255)
                             else:
                                 color = (255, 255, 255)
 
-                            draw.text((2, 2), f"R={rew:.0f}", fill=color, font=font)
+                            draw.text((2, 2), f"R={rew:+.2f}", fill=color, font=font)
                             row_images.append(np.array(pil_img))
 
                         # Horizontally stack the row
@@ -491,6 +507,10 @@ class WMInference(StateDictMixin):
                         "wm_grid_rewards": wandb.Image(Image.fromarray(final_grid)),
                         "actor_critic/eval/candidate_actions": wandb.Histogram(candidate_actions),
                     })
+
+                episode_rewards.append(rewards)
+                entropies.append(entropy)
+                all_probs.append(probs)
 
                 # Plotting WM images to wandb
                 wm_obs_plot = world_model_env.obs_buffer[0,:,:,:,:]  # [4, 3, 64, 64]
@@ -509,15 +529,20 @@ class WMInference(StateDictMixin):
                     frames.append(frame_to_uint8(frame))
                 # Horizontally stack frames: [64, 64 * 4, 3]
                 grid = np.concatenate(frames, axis=1)
+                conditioning_frame = predicted_from_obs[0]
 
                 logits_next, value_next, _ = self.agent.actor_critic.predict_act_value(obs, (self.agent.hx, self.agent.cx))
-                td_error = (rewards + self._cfg.actor_critic.actor_critic_loss.gamma * value_next - value).abs()
+                bootstrap = (~done).float() * value_next
+                td_error = (rewards + self._cfg.actor_critic.actor_critic_loss.gamma * bootstrap - value).abs()
                 episode_td_errors.append(td_error.mean().item())
 
                 # Log the step
-                wandb.log({
+                step_log = {
                     "eval_step": step,
                     "actor_critic/eval/planning_flag": planning_flag,
+                    "actor_critic/eval/ac_action": ac_action.item(),
+                    "actor_critic/eval/executed_action": executed_action.item(),
+                    "actor_critic/eval/planning_overrode_ac": int(executed_action.item() != ac_action.item()),
                     "actor_critic/eval/planned_value": value.mean().item(),
                     "actor_critic/eval/planned_td_error": td_error.mean().item(),
                     "actor_critic/eval/planned_step_reward": rewards.mean().item(),
@@ -527,10 +552,39 @@ class WMInference(StateDictMixin):
                     "actor_critic/eval/planned_entropy": entropy,
                     "obs_sequence": wandb.Image(Image.fromarray(grid)),           # from real obs
                     "wm_obs_sequence": wandb.Image(Image.fromarray(wm_grid)),     # real-frame WM conditioning buffer
-                    "wm_predicted_next_obs": wandb.Image(Image.fromarray(frame_to_uint8(predicted_obs[0]))),
+                    "wm_debug/prediction_valid": int(predicted_obs is not None),
+                    "wm_debug/conditioning_obs_mean": conditioning_frame.mean().item(),
+                    "wm_debug/conditioning_obs_std": conditioning_frame.std().item(),
+                    "wm_debug/conditioning_obs_min": conditioning_frame.min().item(),
+                    "wm_debug/conditioning_obs_max": conditioning_frame.max().item(),
+                    "wm_debug/obs_buffer_std": world_model_env.obs_buffer.std().item(),
                     "meta_planning_depth": depth,
                     "step_time": time.time() - start_time
-                })
+                }
+
+                # Warm-up buffers contain padding, so only publish imagination
+                # images after all conditioning frames are real observations.
+                if predicted_obs is not None:
+                    predicted_frame = predicted_obs[0]
+                    conditioning_vs_predicted = np.concatenate(
+                        [frame_to_uint8(conditioning_frame), frame_to_uint8(predicted_frame)],
+                        axis=1,
+                    )
+                    step_log.update({
+                        "wm_predicted_next_obs": wandb.Image(Image.fromarray(frame_to_uint8(predicted_frame))),
+                        "wm_debug/conditioning_vs_predicted": wandb.Image(
+                            Image.fromarray(conditioning_vs_predicted),
+                            caption="left: conditioning frame, right: predicted next frame",
+                        ),
+                        "wm_debug/predicted_obs_mean": predicted_frame.mean().item(),
+                        "wm_debug/predicted_obs_std": predicted_frame.std().item(),
+                        "wm_debug/predicted_obs_min": predicted_frame.min().item(),
+                        "wm_debug/predicted_obs_max": predicted_frame.max().item(),
+                    })
+                if rollout_entropy is not None:
+                    step_log["actor_critic/eval/planned_rollout_entropy"] = rollout_entropy
+
+                wandb.log(step_log)
 
                 step += 1
                 if done.any():

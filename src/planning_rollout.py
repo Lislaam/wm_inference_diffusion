@@ -5,7 +5,7 @@ import torch
 from torch.distributions.categorical import Categorical
 
 
-def multistep_planning(agent, world_model_env, num_actions, cfg):
+def multistep_planning(agent, world_model_env, num_actions, cfg, default_action):
     """
     Perform multistep planning using the world model environment.
     Pads all aborted or high-entropy trajectories to avoid indexing errors.
@@ -56,8 +56,6 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
             last_value = 0.0
 
             for i in range(cfg.evaluation.planning_steps):
-                rews = []
-
                 # Sample next obs
                 next_obs, _ = world_model_env.sampler.sample(obs_buffer, act_buffer)
 
@@ -65,8 +63,8 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
                 logits_rew, _, (wm_hx, wm_cx) = world_model_env.rew_end_model.predict_rew_end(
                     obs_buffer[:, -1:], act_buffer[:, -1:], next_obs.unsqueeze(1), (wm_hx, wm_cx)
                 )
-                for _ in range(10):
-                    rews.append((Categorical(logits=logits_rew).sample().squeeze(1) - 1.0).item())
+                reward_probs = logits_rew.softmax(dim=-1)
+                expected_reward = (reward_probs[..., 2] - reward_probs[..., 0]).item()
 
                 # Roll buffers
                 obs_buffer = obs_buffer.roll(-1, dims=1)
@@ -100,15 +98,18 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
                 #         rollout_valid = False
                 #         break
                 # else:
-                act_buffer[:, -1] = dist.sample()
+                if cfg.evaluation.real_env.deterministic:
+                    act_buffer[:, -1] = dist.probs.argmax(dim=-1)
+                else:
+                    act_buffer[:, -1] = dist.sample()
 
                 # Logging
                 wm_predicted_obs[a].append(next_obs[0])
-                action_predicted_rews[a, i] = max(rews)
+                action_predicted_rews[a, i] = expected_reward
                 action_predicted_values[a, i] = value.detach().cpu().item()
                 if i > 0:
                     action_predicted_tds[a, i-1] = (
-                        max(rews) + cfg.actor_critic.actor_critic_loss.gamma * value - last_value
+                        expected_reward + cfg.actor_critic.actor_critic_loss.gamma * value - last_value
                     ).abs().detach().cpu().item()
                 last_value = value.detach().cpu().item()
                 collected += 1
@@ -133,7 +134,7 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
                 entropies = {a: latest_entropies[a] for a in range(num_actions)}
                 best_action = min(entropies, key=entropies.get)
 
-                print(f"⚠️ All rollouts failed at max depth. "
+                print(f"All rollouts failed at max depth. "
                     f"Falling back to lowest-entropy action {best_action} "
                     f"(entropy={entropies[best_action]:.3f})")
 
@@ -153,21 +154,41 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
         # Select candidate actions among valid rollouts
         valid_idxs = [a for a, ok in enumerate(rollout_valids) if ok]
 
+        gamma = cfg.actor_critic.actor_critic_loss.gamma
+        discounts = gamma ** np.arange(cfg.evaluation.planning_steps)
+        tolerance = cfg.evaluation.get("planning_score_tolerance", 0.0)
+
         if cfg.evaluation.planning_mode == 'reward':
-            scores = {a: float(np.sum(action_predicted_rews[a, :])) for a in valid_idxs}
+            scores = {a: float(np.sum(discounts * action_predicted_rews[a, :])) for a in valid_idxs}
             best = max(scores.values())
-            candidate_actions = [a for a, s in scores.items() if s == best]
+            candidate_actions = [a for a, s in scores.items() if best - s <= tolerance]
         elif cfg.evaluation.planning_mode == 'value':
-            scores = {a: float(np.sum(action_predicted_values[a, :])) for a in valid_idxs}
+            scores = {
+                a: float(
+                    np.sum(discounts * action_predicted_rews[a, :])
+                    + gamma ** cfg.evaluation.planning_steps * action_predicted_values[a, -1]
+                )
+                for a in valid_idxs
+            }
             best = max(scores.values())
-            candidate_actions = [a for a, s in scores.items() if s == best]
+            candidate_actions = [a for a, s in scores.items() if best - s <= tolerance]
         elif cfg.evaluation.planning_mode == 'td':
             scores = {a: float(np.sum(action_predicted_tds[a, :])) for a in valid_idxs}
             best = min(scores.values())
-            candidate_actions = [a for a, s in scores.items() if s == best]
+            candidate_actions = [a for a, s in scores.items() if s - best <= tolerance]
 
-    best_action = torch.tensor([np.random.choice(np.array(candidate_actions))], device=world_model_env.device)
-    print(f"Best action selected: {best_action} from {candidate_actions}")
+    default_action = int(default_action.item())
+    if default_action in candidate_actions:
+        selected_action = default_action
+    elif cfg.evaluation.real_env.deterministic:
+        if cfg.evaluation.planning_mode == "td":
+            selected_action = min(candidate_actions, key=scores.get)
+        else:
+            selected_action = max(candidate_actions, key=scores.get)
+    else:
+        selected_action = int(np.random.choice(np.array(candidate_actions)))
+
+    best_action = torch.tensor([selected_action], dtype=torch.long, device=world_model_env.device)
 
     return (best_action, np.array(candidate_actions),
             action_predicted_rews, wm_predicted_obs,

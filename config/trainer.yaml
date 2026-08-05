@@ -76,7 +76,8 @@ evaluation:
   planning_percentage: 1.0 # Probability of taking a planning step after conditioning warmup
   inner_planning_steps: 0 # Number of steps to plan in the inner (meta-planning) loop
   planning_depth: 1 # Maximum depth of the planning tree
-  planning_mode: reward # reward, value, or td
+  planning_mode: reward # reward: expected discounted reward; value: reward plus final AC value; td: TD consistency
+  planning_score_tolerance: 0.01 # Keep the trained AC action when imagined scores are effectively tied
 
 world_model_env:
   _target_: envs.WorldModelEnvConfig
