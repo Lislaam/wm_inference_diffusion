@@ -216,6 +216,7 @@ class WMInference(StateDictMixin):
         wandb.define_metric("wm_predicted_next_obs", step_metric="eval_step")
         wandb.define_metric("wm_grid_rewards", step_metric="eval_step")
         wandb.define_metric("wm_debug/*", step_metric="eval_step")
+        wandb.define_metric("wm_probe/*")
         wandb.define_metric("meta_planning_depth", step_metric="eval_step")
         wandb.define_metric("step_time", step_metric="eval_step")
         wandb.define_metric("episode_length", step_metric="eval_step")
@@ -233,6 +234,7 @@ class WMInference(StateDictMixin):
                     "Planning requested (evaluation.planning_steps > 0) but train dataset is empty. "
                     "Check static_dataset.path and ensure <path>/train/info.pt exists."
                 )
+            self.log_world_model_probe()
             start_time = time.time()
             self.eval_with_planning()
             if self._rank == 0:
@@ -242,6 +244,63 @@ class WMInference(StateDictMixin):
             dist.barrier()
 
         return None
+
+    @torch.no_grad()
+    def log_world_model_probe(self) -> None:
+        """Test the loaded denoiser on an in-distribution dataset sequence."""
+        self.agent.eval()
+        num_conditioning = self._cfg.agent.denoiser.inner_model.num_steps_conditioning
+
+        # Pick a long episode and a visually non-uniform target frame so the
+        # probe cannot accidentally report a padded grey segment.
+        episode_ids = np.argsort(self.train_dataset.lengths)[::-1][: min(8, self.train_dataset.num_episodes)]
+        best = None
+        for episode_id in episode_ids:
+            episode = self.train_dataset.load_episode(int(episode_id))
+            if len(episode) <= num_conditioning:
+                continue
+            target_stds = episode.obs[num_conditioning:].flatten(1).std(dim=1)
+            relative_idx = int(target_stds.argmax().item())
+            target_idx = num_conditioning + relative_idx
+            candidate = (float(target_stds[relative_idx].item()), int(episode_id), episode, target_idx)
+            if best is None or candidate[0] > best[0]:
+                best = candidate
+
+        if best is None:
+            raise RuntimeError(
+                f"Cannot build WM probe: no dataset episode has more than {num_conditioning} frames."
+            )
+
+        _, episode_id, episode, target_idx = best
+        start_idx = target_idx - num_conditioning
+        conditioning_obs = episode.obs[start_idx:target_idx].unsqueeze(0).to(self._device)
+        conditioning_act = episode.act[start_idx:target_idx].unsqueeze(0).to(self._device)
+        target = episode.obs[target_idx].to(self._device)
+        prediction, _ = self.rl_env.sampler.sample(conditioning_obs, conditioning_act)
+        predicted = prediction[0]
+        target_std = target.std().item()
+        predicted_std = predicted.std().item()
+
+        frames = [frame_to_uint8(frame) for frame in conditioning_obs[0]]
+        frames.extend((frame_to_uint8(target), frame_to_uint8(predicted)))
+        comparison = np.concatenate(frames, axis=1)
+
+        wandb.log({
+            "wm_probe/conditioning_target_prediction": wandb.Image(
+                Image.fromarray(comparison),
+                caption="conditioning frames | real next frame | imagined next frame",
+            ),
+            "wm_probe/mse": torch.nn.functional.mse_loss(predicted, target).item(),
+            "wm_probe/episode_id": episode_id,
+            "wm_probe/target_index": target_idx,
+            "wm_probe/conditioning_std": conditioning_obs.std().item(),
+            "wm_probe/target_std": target_std,
+            "wm_probe/predicted_std": predicted_std,
+            "wm_probe/std_ratio": predicted_std / max(target_std, 1e-8),
+            "wm_probe/predicted_mean": predicted.mean().item(),
+            "wm_probe/predicted_min": predicted.min().item(),
+            "wm_probe/predicted_max": predicted.max().item(),
+        })
 
 
     @torch.no_grad()
@@ -501,10 +560,17 @@ class WMInference(StateDictMixin):
                         grid_rows.append(row_strip)
                     # Vertically stack the rows to form final grid
                     final_grid = np.concatenate(grid_rows, axis=0)  # [64*n, 64*a, 3]
+                    imagined_grid_tensor = torch.stack(
+                        [torch.stack(action_frames) for action_frames in wm_predicted_obs]
+                    )
                     # Log to wandb
                     wandb.log({
                         "eval_step": step,
                         "wm_grid_rewards": wandb.Image(Image.fromarray(final_grid)),
+                        "wm_debug/grid_predicted_std": imagined_grid_tensor.std().item(),
+                        "wm_debug/grid_predicted_mean": imagined_grid_tensor.mean().item(),
+                        "wm_debug/grid_predicted_min": imagined_grid_tensor.min().item(),
+                        "wm_debug/grid_predicted_max": imagined_grid_tensor.max().item(),
                         "actor_critic/eval/candidate_actions": wandb.Histogram(candidate_actions),
                     })
 
