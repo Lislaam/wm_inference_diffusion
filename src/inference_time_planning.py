@@ -41,6 +41,12 @@ from utils import (
 
 def frame_to_uint8(frame: torch.Tensor) -> np.ndarray:
     """Convert a CHW observation normalized to [-1, 1] into an HWC image."""
+    if frame.ndim == 4:
+        if frame.size(0) != 1:
+            raise ValueError(f"Expected a single image or batch of one image, got shape {tuple(frame.shape)}")
+        frame = frame[0]
+    if frame.ndim != 3:
+        raise ValueError(f"Expected CHW image tensor, got shape {tuple(frame.shape)}")
     return (
         frame.detach()
         .cpu()
@@ -204,6 +210,7 @@ class WMInference(StateDictMixin):
         wandb.define_metric("obs_sequence", step_metric="eval_step")
         wandb.define_metric("wm_obs_sequence", step_metric="eval_step")
         wandb.define_metric("wm_predicted_next_obs", step_metric="eval_step")
+        wandb.define_metric("wm_grid_rewards", step_metric="eval_step")
         wandb.define_metric("meta_planning_depth", step_metric="eval_step")
         wandb.define_metric("step_time", step_metric="eval_step")
         wandb.define_metric("episode_length", step_metric="eval_step")
@@ -264,7 +271,7 @@ class WMInference(StateDictMixin):
                 logits, value, (hx, cx) = out
 
                 dist = Categorical(logits=logits)
-                action = dist.sample() # Not perfectly deterministic like the argmax # .probs.argmax(dim=-1)
+                action = dist.probs.argmax(dim=-1) if self._cfg.evaluation.real_env.deterministic else dist.sample()
                 probs = dist.probs.detach().cpu()
                 entropy = dist.entropy().detach().cpu().item() / math.log(2)
 
@@ -299,10 +306,10 @@ class WMInference(StateDictMixin):
                 # Per-step logging
                 wandb.log({
                     "eval_step": step,
-                    "actor_critic/eval/value": value,
+                    "actor_critic/eval/value": value.mean().item(),
                     "actor_critic/eval/td_error": td_error_mean,
-                    "actor_critic/eval/step_reward": rewards.item(),
-                    "actor_critic/eval/cumulative_reward": sum(episode_rewards),
+                    "actor_critic/eval/step_reward": rewards.mean().item(),
+                    "actor_critic/eval/cumulative_reward": torch.stack(episode_rewards).sum().item(),
                     "actor_critic/eval/policy_entropy": entropy,
                     "actor_critic/eval/mean_action_distribution": wandb.Histogram(probs.mean(dim=0).numpy()),
                     "unplanned_obs_sequence": wandb.Image(Image.fromarray(grid)),
@@ -356,6 +363,11 @@ class WMInference(StateDictMixin):
                 f"WM/real-env batch mismatch: {world_model_env.num_envs} WM environments "
                 f"for {env.num_envs} real environments."
             )
+        if env.num_envs != 1:
+            raise RuntimeError(
+                "Inference-time planning visualization currently expects collection.test.num_envs=1. "
+                f"Got {env.num_envs}."
+            )
         num_episodes = self._cfg.actor_critic.training.num_eval
 
         episode_rewards = []
@@ -374,7 +386,7 @@ class WMInference(StateDictMixin):
                 start_time = time.time()
                 logits, value, (self.agent.hx, self.agent.cx) = self.agent.actor_critic.predict_act_value(obs, (self.agent.hx, self.agent.cx))
                 dist = Categorical(logits=logits)
-                actions = dist.sample()
+                actions = dist.probs.argmax(dim=-1) if self._cfg.evaluation.real_env.deterministic else dist.sample()
                 probs = dist.probs.detach().cpu()
                 entropy = dist.entropy().detach().cpu().item() / math.log(2)
 
@@ -474,8 +486,11 @@ class WMInference(StateDictMixin):
                     # Vertically stack the rows to form final grid
                     final_grid = np.concatenate(grid_rows, axis=0)  # [64*n, 64*a, 3]
                     # Log to wandb
-                    wandb.log({"wm_grid_rewards": wandb.Image(Image.fromarray(final_grid))})
-                    wandb.log({"actor_critic/eval/candidate_actions": wandb.Histogram(candidate_actions)})
+                    wandb.log({
+                        "eval_step": step,
+                        "wm_grid_rewards": wandb.Image(Image.fromarray(final_grid)),
+                        "actor_critic/eval/candidate_actions": wandb.Histogram(candidate_actions),
+                    })
 
                 # Plotting WM images to wandb
                 wm_obs_plot = world_model_env.obs_buffer[0,:,:,:,:]  # [4, 3, 64, 64]
@@ -497,17 +512,17 @@ class WMInference(StateDictMixin):
 
                 logits_next, value_next, _ = self.agent.actor_critic.predict_act_value(obs, (self.agent.hx, self.agent.cx))
                 td_error = (rewards + self._cfg.actor_critic.actor_critic_loss.gamma * value_next - value).abs()
-                episode_td_errors.append(td_error.item())
+                episode_td_errors.append(td_error.mean().item())
 
                 # Log the step
                 wandb.log({
                     "eval_step": step,
                     "actor_critic/eval/planning_flag": planning_flag,
-                    "actor_critic/eval/planned_value": value,
-                    "actor_critic/eval/planned_td_error": td_error.item(),
-                    "actor_critic/eval/planned_step_reward": rewards.item(),
-                    "actor_critic/eval/planned_rew_model_reward": rew_model_reward.item(),
-                    "actor_critic/eval/planned_cumulative_reward": sum(episode_rewards),
+                    "actor_critic/eval/planned_value": value.mean().item(),
+                    "actor_critic/eval/planned_td_error": td_error.mean().item(),
+                    "actor_critic/eval/planned_step_reward": rewards.mean().item(),
+                    "actor_critic/eval/planned_rew_model_reward": rew_model_reward.mean().item(),
+                    "actor_critic/eval/planned_cumulative_reward": torch.stack(episode_rewards).sum().item(),
                     "actor_critic/eval/planned_mean_action_distribution": wandb.Histogram(probs.numpy()),
                     "actor_critic/eval/planned_entropy": entropy,
                     "obs_sequence": wandb.Image(Image.fromarray(grid)),           # from real obs

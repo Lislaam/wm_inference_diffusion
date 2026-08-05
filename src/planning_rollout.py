@@ -103,20 +103,20 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
                 act_buffer[:, -1] = dist.sample()
 
                 # Logging
-                wm_predicted_obs[a].append(next_obs.squeeze())
+                wm_predicted_obs[a].append(next_obs[0])
                 action_predicted_rews[a, i] = max(rews)
                 action_predicted_values[a, i] = value.detach().cpu().item()
                 if i > 0:
                     action_predicted_tds[a, i-1] = (
                         max(rews) + cfg.actor_critic.actor_critic_loss.gamma * value - last_value
-                    ).abs()
+                    ).abs().detach().cpu().item()
                 last_value = value.detach().cpu().item()
                 collected += 1
 
             # Pad any remaining steps if rollout terminated early
             if collected < cfg.evaluation.planning_steps:
                 remaining = cfg.evaluation.planning_steps - collected
-                dummy_obs = torch.zeros_like(next_obs.squeeze())
+                dummy_obs = torch.zeros_like(next_obs[0])
                 wm_predicted_obs[a].extend([dummy_obs.clone() for _ in range(remaining)])
                 for j in range(collected, cfg.evaluation.planning_steps):
                     action_predicted_rews[a, j] = 0.0
@@ -139,7 +139,7 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
 
                 # Use the true rollout data associated with that action
                 return (
-                    torch.tensor([best_action]),
+                    torch.tensor([best_action], device=world_model_env.device),
                     np.array([best_action]),
                     action_predicted_rews,       # already filled with rews per action/step
                     wm_predicted_obs,            # already filled with obs per action
@@ -166,7 +166,7 @@ def multistep_planning(agent, world_model_env, num_actions, cfg):
             best = min(scores.values())
             candidate_actions = [a for a, s in scores.items() if s == best]
 
-    best_action = torch.tensor([np.random.choice(np.array(candidate_actions))])
+    best_action = torch.tensor([np.random.choice(np.array(candidate_actions))], device=world_model_env.device)
     print(f"Best action selected: {best_action} from {candidate_actions}")
 
     return (best_action, np.array(candidate_actions),

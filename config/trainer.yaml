@@ -72,11 +72,11 @@ evaluation:
     num_episodes: 64
     deterministic: True
     max_episode_steps: 1000
-  planning_steps: 0
-  planning_percentage: 0 # Probability of taking a planning step after conditioning warmup
+  planning_steps: 5
+  planning_percentage: 1.0 # Probability of taking a planning step after conditioning warmup
   inner_planning_steps: 0 # Number of steps to plan in the inner (meta-planning) loop
   planning_depth: 1 # Maximum depth of the planning tree
-  planning_mode: value # reward, value, or td
+  planning_mode: reward # reward, value, or td
 
 world_model_env:
   _target_: envs.WorldModelEnvConfig
