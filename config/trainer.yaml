@@ -17,7 +17,7 @@ wandb:
   notes: null
 
 initialization:
-  path_to_ckpt: ${hydra:runtime.cwd}/trained_models/coinrun-trained-policy/wm_agent.pt
+  path_to_ckpt: ${hydra:runtime.cwd}/trained_models/coinrun-trained-policy/agent_coinrun_300k.pt
   load_denoiser: True
   load_rew_end_model: True
   load_actor_critic: True
