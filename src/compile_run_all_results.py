@@ -17,8 +17,8 @@ CHECKPOINT_BASENAME = "agent_coinrun_300k.pt"
 
 PER_RUN_CSV = "procgen_run_all_per_run.csv"
 SUMMARY_CSV = "procgen_run_all_summary.csv"
-BASELINE_PER_RUN_CSV = "procgen_baseline_per_run.csv"
-BASELINE_SUMMARY_CSV = "procgen_baseline_summary.csv"
+BASELINE_PER_RUN_CSV = "procgen_run_all_baseline_per_run.csv"
+BASELINE_SUMMARY_CSV = "procgen_run_all_baseline_summary.csv"
 
 PLANNED_RETURN_KEYS = (
     "actor_critic/eval/planned_return_mean",
