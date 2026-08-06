@@ -1,0 +1,11 @@
+run_id,run_name,env_type,seed,episode_length,final_reward,reward_per_step
+i81ddtx5,CoinRun_0_roll_0_inner_0_pct_1_max_value_seed_0_time_2026-07-20_17-51-27,CoinRun,0,51.0,10.0,0.19607843137254902
+v43mil81,CoinRun_0_roll_0_inner_0_pct_1_max_value_seed_1_time_2026-07-20_17-51-43,CoinRun,1,100.0,10.0,0.1
+elc9j3t2,CoinRun_0_roll_0_inner_0_pct_1_max_value_seed_2_time_2026-07-20_17-51-58,CoinRun,2,462.0,10.0,0.021645021645021644
+f9oxu78v,CoinRun_0_roll_0_inner_0_pct_1_max_value_seed_3_time_2026-07-20_17-52-13,CoinRun,3,67.0,10.0,0.14925373134328357
+zhgrni1w,CoinRun_0_roll_0_inner_0_pct_1_max_value_seed_4_time_2026-07-20_17-52-28,CoinRun,4,324.0,10.0,0.030864197530864196
+yrxnvn6y,CoinRun_0_roll_0_inner_0_pct_1_max_value_seed_5_time_2026-07-20_17-52-42,CoinRun,5,136.0,10.0,0.07352941176470588
+o8o6b3cr,CoinRun_0_roll_0_inner_0_pct_1_max_value_seed_6_time_2026-07-20_17-52-57,CoinRun,6,215.0,10.0,0.046511627906976744
+4sbxu4ff,CoinRun_0_roll_0_inner_0_pct_1_max_value_seed_7_time_2026-07-20_17-53-12,CoinRun,7,126.0,10.0,0.07936507936507936
+yhuu54z0,CoinRun_0_roll_0_inner_0_pct_1_max_value_seed_8_time_2026-07-20_17-53-26,CoinRun,8,40.0,10.0,0.25
+mzuws7ct,CoinRun_0_roll_0_inner_0_pct_1_max_value_seed_9_time_2026-07-20_17-53-41,CoinRun,9,144.0,10.0,0.06944444444444445

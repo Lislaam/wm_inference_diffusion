@@ -1,0 +1,2 @@
+env_type,n_seeds_all,seeds_all,reward_mean_all,reward_std_all,episode_length_mean_all,episode_length_std_all,n_seeds_ratio,seeds_ratio,reward_per_step_mean,reward_per_step_std
+CoinRun,10,"0,1,2,3,4,5,6,7,8,9",10.0,0.0,166.5,126.97263484704095,10,"0,1,2,3,4,5,6,7,8,9",0.10166919453729248,0.07068913258335789

@@ -1,0 +1,2 @@
+env_type,planning_steps,planning_percentage,planning_mode,n_seeds_all,seeds_all,reward_mean_all,reward_std_all,episode_length_mean_all,episode_length_std_all,n_seeds_ratio,seeds_ratio,reward_per_step_mean,reward_per_step_std
+CoinRun,5,1.0,random,10,"0,1,2,3,4,5,6,7,8,9",2.0,4.0,641.9,300.6241673585142,10,"0,1,2,3,4,5,6,7,8,9",0.006121074211394534,0.015202745490374318

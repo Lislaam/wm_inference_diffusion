@@ -1,0 +1,11 @@
+run_id,run_name,env_type,planning_steps,planning_percentage,planning_mode,seed,episode_length,final_reward,reward_per_step
+3tvr9gs9,CoinRun_5_roll_0_inner_1_pct_1_max_random_seed_0_time_2026-07-20_17-53-54,CoinRun,5,1.0,random,0,197.0,10.0,0.050761421319796954
+am15q82y,CoinRun_5_roll_0_inner_1_pct_1_max_random_seed_1_time_2026-07-20_17-54-14,CoinRun,5,1.0,random,1,1000.0,0.0,0.0
+a8brv9pz,CoinRun_5_roll_0_inner_1_pct_1_max_random_seed_2_time_2026-07-20_17-54-57,CoinRun,5,1.0,random,2,678.0,0.0,0.0
+o100deul,CoinRun_5_roll_0_inner_1_pct_1_max_random_seed_3_time_2026-07-20_17-55-29,CoinRun,5,1.0,random,3,957.0,10.0,0.01044932079414838
+20tss8pb,CoinRun_5_roll_0_inner_1_pct_1_max_random_seed_4_time_2026-07-20_17-56-11,CoinRun,5,1.0,random,4,643.0,0.0,0.0
+4587wov5,CoinRun_5_roll_0_inner_1_pct_1_max_random_seed_5_time_2026-07-20_17-56-45,CoinRun,5,1.0,random,5,649.0,0.0,0.0
+eailhfqk,CoinRun_5_roll_0_inner_1_pct_1_max_random_seed_6_time_2026-07-20_17-57-17,CoinRun,5,1.0,random,6,1000.0,0.0,0.0
+z32c9ikq,CoinRun_5_roll_0_inner_1_pct_1_max_random_seed_7_time_2026-07-20_17-57-59,CoinRun,5,1.0,random,7,767.0,0.0,0.0
+3v6bvs9n,CoinRun_5_roll_0_inner_1_pct_1_max_random_seed_8_time_2026-07-20_17-58-36,CoinRun,5,1.0,random,8,110.0,0.0,0.0
+qup3iglv,CoinRun_5_roll_0_inner_1_pct_1_max_random_seed_9_time_2026-07-20_17-58-53,CoinRun,5,1.0,random,9,418.0,0.0,0.0
