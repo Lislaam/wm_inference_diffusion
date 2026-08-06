@@ -4,6 +4,7 @@ wandb
 .venv
 outputs
 results/figures
+results/data
 slurm*
 experiments
 checkpoints
