@@ -17,6 +17,8 @@ CHECKPOINT_BASENAME = "agent_coinrun_300k.pt"
 
 PER_RUN_CSV = "procgen_run_all_per_run.csv"
 SUMMARY_CSV = "procgen_run_all_summary.csv"
+BASELINE_PER_RUN_CSV = "procgen_baseline_per_run.csv"
+BASELINE_SUMMARY_CSV = "procgen_baseline_summary.csv"
 
 PLANNED_RETURN_KEYS = (
     "actor_critic/eval/planned_return_mean",
@@ -222,7 +224,7 @@ def main() -> None:
         "episode_length",
         "num_planning_steps",
     ]
-    per_run = pd.DataFrame(rows, columns=columns).sort_values(
+    all_per_run = pd.DataFrame(rows, columns=columns).sort_values(
         [
             "planning_mode",
             "planning_steps",
@@ -231,6 +233,8 @@ def main() -> None:
             "seed",
         ]
     )
+
+    per_run = all_per_run[all_per_run["planning_steps"] != 0].copy()
     per_run.to_csv(PER_RUN_CSV, index=False)
 
     group_columns = [
@@ -261,9 +265,39 @@ def main() -> None:
         )
     summary.to_csv(SUMMARY_CSV, index=False)
 
+    baseline_per_run = all_per_run[all_per_run["planning_steps"] == 0].copy()
+    baseline_per_run.to_csv(BASELINE_PER_RUN_CSV, index=False)
+    if baseline_per_run.empty:
+        baseline_summary = pd.DataFrame()
+    else:
+        baseline_summary = (
+            baseline_per_run.groupby(group_columns, dropna=False)
+            .agg(
+                n_runs=("run_id", "count"),
+                n_scores=("score", "count"),
+                score_mean=("score", "mean"),
+                score_std=("score", lambda values: values.std(ddof=0)),
+                episode_length_mean=("episode_length", "mean"),
+                episode_length_std=("episode_length", lambda values: values.std(ddof=0)),
+                num_planning_steps_mean=("num_planning_steps", "mean"),
+                num_planning_steps_std=("num_planning_steps", lambda values: values.std(ddof=0)),
+                seeds=("seed", lambda values: ",".join(map(str, sorted(values)))),
+            )
+            .reset_index()
+        )
+    baseline_summary.to_csv(BASELINE_SUMMARY_CSV, index=False)
+
     expected_run_count = sum(len(setting.seeds) for setting in settings)
+    expected_non_baseline_count = sum(
+        len(setting.seeds) for setting in settings if setting.planning_steps != 0
+    )
+    expected_baseline_count = sum(
+        len(setting.seeds) for setting in settings if setting.planning_steps == 0
+    )
     print(f"Loaded {len(runs)} project runs")
-    print(f"Matched {len(per_run)} / {expected_run_count} expected run_all runs")
+    print(f"Matched {len(all_per_run)} / {expected_run_count} expected run_all runs")
+    print(f"Saved {len(per_run)} / {expected_non_baseline_count} non-baseline rows")
+    print(f"Saved {len(baseline_per_run)} / {expected_baseline_count} baseline rows")
     print(f"Ignored {rejected_checkpoint} matching old-checkpoint runs")
     print(f"Resolved {duplicate_count} duplicate setting/seed runs by keeping the newest")
     if missing:
@@ -272,6 +306,8 @@ def main() -> None:
             print(f"  {item}")
     print(f"Saved {PER_RUN_CSV}")
     print(f"Saved {SUMMARY_CSV}")
+    print(f"Saved {BASELINE_PER_RUN_CSV}")
+    print(f"Saved {BASELINE_SUMMARY_CSV}")
     print(summary.to_string(index=False))
 
 
