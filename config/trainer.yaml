@@ -11,7 +11,7 @@ wandb:
   mode: online
   project: world_models
   entity: null
-  name: ${env.env_type}_${evaluation.planning_steps}_roll_${evaluation.inner_planning_steps}_inner_${evaluation.planning_percentage}_pct_${evaluation.planning_depth}_max_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}  # ${env.env_type}_rew_end_denoiser_training_time_${now:%Y-%m-%d_%H-%M-%S}
+  name: coinrun_ac_train_1mil_steps #${env.env_type}_${evaluation.planning_steps}_roll_${evaluation.inner_planning_steps}_inner_${evaluation.planning_percentage}_pct_${evaluation.planning_depth}_max_${evaluation.planning_mode}_seed_${common.seed}_time_${now:%Y-%m-%d_%H-%M-%S}  # ${env.env_type}_rew_end_denoiser_training_time_${now:%Y-%m-%d_%H-%M-%S}
   group: null
   tags: null
   notes: null
@@ -52,14 +52,14 @@ static_dataset:
   ignore_sample_weights: True
 
 training:
-  should: False
-  max_env_steps: null # model-free only
+  should: True
+  max_env_steps: 1_000_000 # model-free only
   num_final_epochs: 1 # continue training once after the final collection epoch
   cache_in_ram: True
   num_workers_data_loaders: 0
-  model_free: False # False enables denoiser and reward/end-model training
+  model_free: True # False enables denoiser and reward/end-model training
   compile_wm: False
-  agent_in_wm: True # Route main.py to WMInference for evaluation/planning in the world model
+  agent_in_wm: False # Route main.py to WMInference for evaluation/planning in the world model
 
 evaluation:
   should: True # False for collect data for now
@@ -72,7 +72,7 @@ evaluation:
     num_episodes: 64
     deterministic: True
     max_episode_steps: 1000
-  planning_steps: 5
+  planning_steps: 0
   planning_percentage: 1.0 # Probability of taking a planning step after conditioning warmup
   inner_planning_steps: 0 # Number of steps to plan in the inner (meta-planning) loop
   planning_depth: 1 # Maximum depth of the planning tree
